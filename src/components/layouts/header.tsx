@@ -3,6 +3,7 @@
 import { ArrowLeftOnRectangleIcon, Bars3Icon, SunIcon, MoonIcon, XMarkIcon } from "@heroicons/react/24/solid";
 import { Button } from "@heroui/react";
 import { useTheme } from "next-themes";
+import Image from "next/image";
 import { useActionState } from "react";
 import { logout } from "@/lib/actions";
 import { useEffect, useState } from "react";
@@ -67,11 +68,17 @@ export default function Header({ setToggleOpen, toggleOpen, setMobileOpen, mobil
             </Button>
 
             <a href="/admin/" className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-linear-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-lg shadow-blue-500/50">
-                <span className="text-white font-bold text-sm">Q</span>
+              <div className="w-8 h-8 rounded-lg overflow-hidden">
+                <Image
+                  src="/logo.png"
+                  alt="Frangreen Logo"
+                  width={32}
+                  height={32}
+                  className="w-full h-full object-contain"
+                />
               </div>
               <span className="text-xl font-bold whitespace-nowrap text-gray-900 dark:text-white hidden sm:block">
-                Quoter Online
+                Cotizador Fran Green
               </span>
             </a>
           </div>
