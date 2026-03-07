@@ -1,0 +1,33 @@
+{
+  "extends": [
+    "plugin:@typescript-eslint/recommended",
+    "prettier",
+    "eslint:recommended",
+    "plugin:@next/next/recommended",
+    "next/core-web-vitals"
+  ],
+  "env": {
+    "browser": true,
+    "node": true,
+    "es2020": true,
+    "jest": true
+  },
+  "parser": "@typescript-eslint/parser",
+  "parserOptions": {
+    "ecmaVersion": 11,
+    "sourceType": "module"
+  },
+  "rules": {
+    "prettier/prettier": "error",
+    "no-await-in-loop": "warn",
+    "no-extend-native": "error",
+    "no-use-before-define": "warn",
+    "no-void": "error",
+    "vars-on-top": "warn",
+    "prefer-spread": "warn",
+    "no-unused-vars": "off",
+    "@typescript-eslint/no-explicit-any": "off",
+    "@typescript-eslint/explicit-module-boundary-types": "off"
+  },
+  "plugins": ["prettier"]
+}
