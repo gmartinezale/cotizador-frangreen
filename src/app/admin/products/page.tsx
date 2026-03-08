@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import ProductTable from "@/components/template/Product/ProductTable";
 import { Product } from "@/entities/Product";
 import { ProductRepository } from "@/data/products.repository";

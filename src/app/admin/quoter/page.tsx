@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import CreateQuoter from "@/components/template/Quoter/Create";
 import { ProductRepository } from "@/data/products.repository";
 import { Product } from "@/entities/Product";

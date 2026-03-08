@@ -1,4 +1,4 @@
-"use server";
+export const dynamic = "force-dynamic";
 
 import QuoterDashboard from "@/components/template/Dashboard/QuoterDashboard";
 import SkeletonDashboard from "@/components/template/Dashboard/SkeletonDashboard";
