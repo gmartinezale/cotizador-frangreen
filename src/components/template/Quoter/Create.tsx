@@ -241,7 +241,7 @@ export default function CreateQuoter({
                           inputWrapper: "bg-white dark:bg-gray-900/50 border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500",
                         }}
                         onChange={(date) => {
-                          field.onChange(date);
+                          field.onChange(date ? date.toString() : "");
                         }}
                       />
                     )}
