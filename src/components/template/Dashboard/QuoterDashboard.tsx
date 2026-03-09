@@ -113,7 +113,7 @@ export default function QuoterDashboard({
       {/* PENDIENTES */}
       <StageSection
         icon={<ClockIcon className="w-4.5 h-4.5" />}
-        title="Pendientes"
+        title="Cotizaciones Pendientes"
         subtitle="Cotizaciones enviadas — esperando confirmación de pago"
         count={quotersPending.length}
         accentClass="bg-warning"
@@ -130,7 +130,7 @@ export default function QuoterDashboard({
       {/* PAGADAS — Órdenes de Pago */}
       <StageSection
         icon={<BanknotesIcon className="w-4.5 h-4.5" />}
-        title="Órdenes de Pago"
+        title="Pendientes"
         subtitle="Pago confirmado — aún no se ha iniciado el trabajo"
         count={quotersPayment.length}
         accentClass="bg-amber-400"

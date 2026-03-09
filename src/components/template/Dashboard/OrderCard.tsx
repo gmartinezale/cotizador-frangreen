@@ -240,9 +240,9 @@ export default function OrderCard({ quoter }: OrderCardProps) {
                 OT #{quoter.orderNumber}
               </p>
             </div>
-            <span className="text-xs font-medium text-primary bg-primary/10 px-2 py-0.5 rounded-full shrink-0">
-              En proceso
-            </span>
+            <span className="text-xs font-medium text-blue-700 dark:text-blue-400 bg-blue-100 dark:bg-blue-900/40 px-2 py-0.5 rounded-full shrink-0">
+            {quoter.shippingType ? SHIPPING_LABELS[quoter.shippingType as ShippingType] : "Sin envío"}
+          </span>
           </div>
 
           {/* Progress bar */}

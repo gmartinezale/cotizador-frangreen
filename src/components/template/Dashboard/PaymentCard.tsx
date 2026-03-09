@@ -119,8 +119,8 @@ export default function PaymentCard({ quoter }: PaymentCardProps) {
               OT #{quoter.orderNumber}
             </p>
           </div>
-          <span className="text-xs font-medium text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/40 px-2 py-0.5 rounded-full shrink-0">
-            Pago confirmado
+          <span className="text-xs font-medium text-blue-700 dark:text-blue-400 bg-blue-100 dark:bg-blue-900/40 px-2 py-0.5 rounded-full shrink-0">
+            {quoter.shippingType ? SHIPPING_LABELS[quoter.shippingType as ShippingType] : "Sin envío"}
           </span>
         </div>
 
@@ -149,14 +149,6 @@ export default function PaymentCard({ quoter }: PaymentCardProps) {
               <span className="text-gray-500 dark:text-gray-400">Dcto.</span>
               <span className="text-orange-400 font-medium">
                 {quoter.discount}%
-              </span>
-            </div>
-          )}
-          {quoter.shippingType && (
-            <div className="flex justify-between text-xs">
-              <span className="text-gray-500 dark:text-gray-400">Entrega</span>
-              <span className="text-blue-500 dark:text-blue-400 font-medium">
-                {SHIPPING_LABELS[quoter.shippingType as ShippingType]}
               </span>
             </div>
           )}
