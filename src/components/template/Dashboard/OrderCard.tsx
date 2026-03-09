@@ -24,6 +24,8 @@ import {
   DocumentArrowDownIcon,
   EyeIcon,
   DocumentTextIcon,
+  CalendarDaysIcon,
+  PencilSquareIcon,
 } from "@heroicons/react/24/outline";
 import { useContext, useEffect, useReducer } from "react";
 import { ToastContext } from "@/components/elements/Toast/ToastComponent";
@@ -38,6 +40,7 @@ type OrderCardState = {
   showModal: boolean;
   loading: boolean;
   invoiceInput: string;
+  dateValue: string;
   products: ProductsQuoter[];
   shippingType: string | null;
   configuredShipping: number;
@@ -48,6 +51,7 @@ type OrderCardAction =
   | { type: "CLOSE_MODAL" }
   | { type: "SET_LOADING"; payload: boolean }
   | { type: "SET_INVOICE_INPUT"; payload: string }
+  | { type: "SET_DATE_VALUE"; payload: string }
   | { type: "SET_PRODUCTS"; payload: ProductsQuoter[] }
   | { type: "TOGGLE_PRODUCT"; index: number }
   | { type: "SET_SHIPPING_TYPE"; payload: string | null }
@@ -63,6 +67,8 @@ function orderCardReducer(state: OrderCardState, action: OrderCardAction): Order
       return { ...state, loading: action.payload };
     case "SET_INVOICE_INPUT":
       return { ...state, invoiceInput: action.payload };
+    case "SET_DATE_VALUE":
+      return { ...state, dateValue: action.payload };
     case "SET_PRODUCTS":
       return { ...state, products: action.payload };
     case "TOGGLE_PRODUCT": {
@@ -85,13 +91,24 @@ export default function OrderCard({ quoter }: OrderCardProps) {
     showModal: false,
     loading: false,
     invoiceInput: quoter.invoiceNumber || "",
+    dateValue: quoter.dateLimit
+      ? new Date(quoter.dateLimit).toISOString().split("T")[0]
+      : "",
     products: quoter.products || [],
     shippingType: (quoter.shippingType ?? ((quoter.shippingCost ?? 0) > 0 ? 'PAKET' : null)) as string | null,
     configuredShipping: quoter.shippingCost ?? 0,
   });
-  const { showModal, loading, invoiceInput, products, shippingType, configuredShipping } = state;
+  const { showModal, loading, invoiceInput, dateValue, products, shippingType, configuredShipping } = state;
   const { showToast } = useContext(ToastContext);
   const router = useRouter();
+
+  const formattedDate = quoter.dateLimit
+    ? new Date(quoter.dateLimit).toLocaleDateString("es-CL", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      })
+    : "Sin fecha";
 
   useEffect(() => {
     SettingsRepository.instance()
@@ -131,6 +148,27 @@ export default function OrderCard({ quoter }: OrderCardProps) {
       }
     } catch {
       showToast(false, "Error al actualizar producto");
+    } finally {
+      dispatch({ type: "SET_LOADING", payload: false });
+    }
+  };
+
+  const handleSaveDate = async () => {
+    if (!dateValue.trim()) return;
+    dispatch({ type: "SET_LOADING", payload: true });
+    try {
+      const res = await QuoterRepository.instance().updateDateLimit(
+        quoter._id!,
+        dateValue
+      );
+      if (res.success) {
+        showToast(true, "Fecha de entrega actualizada");
+        router.refresh();
+      } else {
+        showToast(false, "Error al actualizar fecha");
+      }
+    } catch {
+      showToast(false, "Error al actualizar fecha");
     } finally {
       dispatch({ type: "SET_LOADING", payload: false });
     }
@@ -236,6 +274,22 @@ export default function OrderCard({ quoter }: OrderCardProps) {
                 <span className="text-gray-500 dark:text-gray-400">Folio</span>
                 <span className="text-gray-600 dark:text-gray-300">
                   {quoter.invoiceNumber}
+                </span>
+              </div>
+            )}
+            {formattedDate && (
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-500 dark:text-gray-400">Fecha de entrega</span>
+                <span className="text-gray-600 dark:text-gray-300">
+                  {formattedDate}
+                </span>
+              </div>
+            )}
+            {shippingType && (
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-500 dark:text-gray-400">Entrega</span>
+                <span className="text-blue-500 dark:text-blue-400 font-medium">
+                  {SHIPPING_LABELS[shippingType as ShippingType]}
                 </span>
               </div>
             )}
@@ -372,6 +426,33 @@ export default function OrderCard({ quoter }: OrderCardProps) {
             )}
 
             <Divider className="my-4" />
+
+            {/* Date limit */}
+            <div className="space-y-2">
+              <h4 className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                <CalendarDaysIcon className="w-4 h-4" />
+                Fecha de entrega
+              </h4>
+              <div className="flex gap-2">
+                <input
+                  type="date"
+                  value={dateValue}
+                  onChange={(e) =>
+                    dispatch({ type: "SET_DATE_VALUE", payload: e.target.value })
+                  }
+                  className="flex-1 text-sm bg-transparent border border-gray-300 dark:border-gray-600 rounded px-3 py-1.5 text-gray-800 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+                <Button
+                  size="sm"
+                  color="primary"
+                  isLoading={loading}
+                  onPress={handleSaveDate}
+                  startContent={<PencilSquareIcon className="w-3.5 h-3.5" />}
+                >
+                  Guardar
+                </Button>
+              </div>
+            </div>
 
             {/* Invoice/Receipt folio */}
             <div className="space-y-2">

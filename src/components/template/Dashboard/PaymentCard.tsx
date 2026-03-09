@@ -12,6 +12,7 @@ import {
   CheckIcon,
   XMarkIcon,
   CalendarDaysIcon,
+  DocumentTextIcon,
 } from "@heroicons/react/24/outline";
 import { useContext, useState } from "react";
 import { ToastContext } from "@/components/elements/Toast/ToastComponent";
@@ -29,6 +30,8 @@ export default function PaymentCard({ quoter }: PaymentCardProps) {
       ? new Date(quoter.dateLimit).toISOString().split("T")[0]
       : ""
   );
+  const [editingInvoice, setEditingInvoice] = useState(false);
+  const [invoiceValue, setInvoiceValue] = useState(quoter.invoiceNumber || "");
   const { showToast } = useContext(ToastContext);
   const router = useRouter();
 
@@ -55,6 +58,27 @@ export default function PaymentCard({ quoter }: PaymentCardProps) {
       }
     } catch {
       showToast(false, "Error al iniciar la orden");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSaveInvoice = async () => {
+    if (!invoiceValue.trim()) return;
+    setLoading(true);
+    try {
+      const res = await QuoterRepository.instance().setInvoiceNumber(
+        quoter._id!,
+        invoiceValue.trim()
+      );
+      if (res.success) {
+        showToast(true, "Folio guardado");
+        setEditingInvoice(false);
+      } else {
+        showToast(false, "Error al guardar folio");
+      }
+    } catch {
+      showToast(false, "Error al guardar folio");
     } finally {
       setLoading(false);
     }
@@ -136,13 +160,58 @@ export default function PaymentCard({ quoter }: PaymentCardProps) {
               </span>
             </div>
           )}
-          {quoter.invoiceNumber && (
-            <div className="flex justify-between text-xs">
-              <span className="text-gray-500 dark:text-gray-400">Folio</span>
-              <span className="text-gray-600 dark:text-gray-300">
-                {quoter.invoiceNumber}
-              </span>
+
+        </div>
+
+        {/* Editable folio */}
+        <div className="rounded-lg bg-gray-50 dark:bg-gray-800/50 border border-gray-200/60 dark:border-gray-700/30 px-3 py-2">
+          {editingInvoice ? (
+            <div className="flex items-center gap-1.5">
+              <input
+                type="text"
+                value={invoiceValue}
+                onChange={(e) => setInvoiceValue(e.target.value)}
+                placeholder="Ej: FAC-001"
+                className="flex-1 text-xs bg-transparent border border-gray-300 dark:border-gray-600 rounded px-2 py-1 text-gray-800 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+              <Tooltip content="Guardar">
+                <Button
+                  size="sm"
+                  isIconOnly
+                  color="success"
+                  variant="flat"
+                  onPress={handleSaveInvoice}
+                  isLoading={loading}
+                >
+                  <CheckIcon className="w-3.5 h-3.5" />
+                </Button>
+              </Tooltip>
+              <Tooltip content="Cancelar">
+                <Button
+                  size="sm"
+                  isIconOnly
+                  variant="flat"
+                  onPress={() => setEditingInvoice(false)}
+                >
+                  <XMarkIcon className="w-3.5 h-3.5" />
+                </Button>
+              </Tooltip>
             </div>
+          ) : (
+            <button
+              type="button"
+              className="flex items-center justify-between w-full"
+              onClick={() => setEditingInvoice(true)}
+            >
+              <span className="text-gray-600 dark:text-gray-400 text-xs flex items-center gap-1">
+                <DocumentTextIcon className="w-3.5 h-3.5" />
+                Folio
+              </span>
+              <span className="text-gray-700 dark:text-gray-200 text-xs flex items-center gap-1">
+                {invoiceValue || "Sin folio"}
+                <PencilIcon className="w-3 h-3 text-gray-400" />
+              </span>
+            </button>
           )}
         </div>
 
