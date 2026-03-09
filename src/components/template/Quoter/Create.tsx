@@ -1,12 +1,13 @@
 "use client";
 import { Product, ProductPrice } from "@/entities/Product";
-import { ProductsQuoter, CustomProduct } from "@/entities/Quoter";
-import { useContext, useEffect, useState } from "react";
+import { ProductsQuoter, CustomProduct, ShippingType, SHIPPING_LABELS, SHIPPING_OPTIONS } from "@/entities/Quoter";
+import { useContext, useEffect, useMemo, useReducer, useState } from "react";
 import { ToastContext } from "@/components/elements/Toast/ToastComponent";
 import { Controller, useForm } from "react-hook-form";
 import { Button, Input, DatePicker, Spinner } from "@heroui/react";
 import { PlusIcon, SparklesIcon, ArrowDownTrayIcon } from "@heroicons/react/24/outline";
 import { QuoterRepository } from "@/data/quoter.repository";
+import { SettingsRepository } from "@/data/settings.repository";
 import { ProductForm } from "./components/ProductForm";
 import { ExtraProducts } from "./components/ExtraProducts";
 import { CustomProductForm } from "./components/CustomProductForm";
@@ -17,6 +18,78 @@ interface ICreateQuoterProps {
   initialProducts: Product[];
 }
 
+// ── Reducer ────────────────────────────────────────────────────────────────────
+const emptyProduct: ProductsQuoter = {
+  amount: 0,
+  price: 0,
+  isFinished: false,
+  extras: [],
+  product: "",
+  productType: { description: "", price: 0 },
+};
+
+type QuoterFormState = {
+  productQuoters: ProductsQuoter[];
+  customProducts: CustomProduct[];
+  availableExtras: Record<number, ProductPrice[]>;
+  discount: number;
+  shippingType: ShippingType | null;
+  shippingCost: number;
+  /** Incremented on RESET to force remount of child form components */
+  formKey: number;
+};
+
+type QuoterFormAction =
+  | { type: "SET_PRODUCT_QUOTERS"; payload: ProductsQuoter[] }
+  | { type: "ADD_PRODUCT" }
+  | { type: "SET_CUSTOM_PRODUCTS"; payload: CustomProduct[] }
+  | { type: "ADD_CUSTOM_PRODUCT" }
+  | { type: "SET_EXTRAS"; index: number; extras: ProductPrice[] }
+  | { type: "SET_DISCOUNT"; payload: number }
+  | { type: "SET_SHIPPING_TYPE"; payload: ShippingType | null }
+  | { type: "SET_SHIPPING_COST"; payload: number }
+  | { type: "RESET" };
+
+const initialFormState: QuoterFormState = {
+  productQuoters: [{ ...emptyProduct }],
+  customProducts: [],
+  availableExtras: {},
+  discount: 0,
+  shippingType: null,
+  shippingCost: 0,
+  formKey: 0,
+};
+
+function quoterFormReducer(state: QuoterFormState, action: QuoterFormAction): QuoterFormState {
+  switch (action.type) {
+    case "SET_PRODUCT_QUOTERS":
+      return { ...state, productQuoters: action.payload };
+    case "ADD_PRODUCT":
+      return { ...state, productQuoters: [...state.productQuoters, { ...emptyProduct }] };
+    case "SET_CUSTOM_PRODUCTS":
+      return { ...state, customProducts: action.payload };
+    case "ADD_CUSTOM_PRODUCT":
+      return {
+        ...state,
+        customProducts: [...state.customProducts, { description: "", price: 0, amount: 1 }],
+      };
+    case "SET_EXTRAS":
+      return { ...state, availableExtras: { ...state.availableExtras, [action.index]: action.extras } };
+    case "SET_DISCOUNT":
+      return { ...state, discount: action.payload };
+    case "SET_SHIPPING_TYPE":
+      return { ...state, shippingType: action.payload };
+    case "SET_SHIPPING_COST":
+      return { ...state, shippingCost: action.payload };
+    case "RESET":
+      // Preserve shippingCost from settings; increment formKey to force remount of child components
+      return { ...initialFormState, shippingCost: state.shippingCost, formKey: state.formKey + 1 };
+    default:
+      return state;
+  }
+}
+
+// ── Component ──────────────────────────────────────────────────────────────────
 export default function CreateQuoter({
   initialProducts,
 }: ICreateQuoterProps) {
@@ -30,66 +103,53 @@ export default function CreateQuoter({
     },
   });
 
-  const [products] = useState<Product[]>(initialProducts);
-  const [availableExtras, setAvailableExtras] = useState<
-    Record<number, ProductPrice[]>
-  >({});
-  const [discount, setDiscount] = useState<number>(0);
-  const [subtotal, setSubtotal] = useState<number>(0);
-  const [totalCalculate, setTotalCalculate] = useState<number>(0);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [savedQuoterNumber, setSavedQuoterNumber] = useState<number | null>(null);
-  const [productQuoters, setProductQuoters] = useState<ProductsQuoter[]>([
-    {
-      amount: 0,
-      price: 0,
-      isFinished: false,
-      extras: [],
-      product: "",
-      productType: { description: "", price: 0 },
-    },
-  ]);
-  const [customProducts, setCustomProducts] = useState<CustomProduct[]>([]);
+  const [formState, dispatch] = useReducer(quoterFormReducer, initialFormState);
+  const { productQuoters, customProducts, availableExtras, discount, shippingType, shippingCost, formKey } = formState;
+  const [ui, setUI] = useState<{ isLoading: boolean; savedQuoterNumber: number | null }>({
+    isLoading: false,
+    savedQuoterNumber: null,
+  });
 
+  // Fetch shipping cost from settings
   useEffect(() => {
-    // Calculate subtotal from catalog products
+    SettingsRepository.instance()
+      .getSettings()
+      .then((data) => {
+        if (data.success) {
+          dispatch({ type: "SET_SHIPPING_COST", payload: data.settings.shippingCost ?? 0 });
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const subtotal = useMemo(() => {
     const catalogTotal = productQuoters.reduce((acc, item) => {
       if (!item) return acc;
-      const price = item.price ?? 0;
-      const amount = item.amount ?? 0;
-      let totalExtras = 0;
-      if (item.extras.length > 0) {
-        totalExtras = item.extras.reduce((acc, extra) => {
-          return acc + extra.price * extra.amount;
-        }, 0);
-      }
-      return acc + price * amount + totalExtras;
+      const extrasTotal = item.extras.reduce((a, e) => a + e.price * e.amount, 0);
+      return acc + (item.price ?? 0) * (item.amount ?? 0) + extrasTotal;
     }, 0);
+    const customTotal = customProducts.reduce((acc, item) => acc + item.price * item.amount, 0);
+    return catalogTotal + customTotal;
+  }, [productQuoters, customProducts]);
 
-    // Calculate subtotal from custom products
-    const customTotal = customProducts.reduce((acc, item) => {
-      return acc + (item.price * item.amount);
-    }, 0);
-
-    const calculatedSubtotal = catalogTotal + customTotal;
-    setSubtotal(calculatedSubtotal);
-
-    // Apply discount
-    const discountAmount = (calculatedSubtotal * discount) / 100;
-    const total = calculatedSubtotal - discountAmount;
-    setTotalCalculate(total);
-  }, [productQuoters, customProducts, discount]);
+  const totalCalculate = useMemo(() => {
+    const afterDiscount = subtotal - (subtotal * discount) / 100;
+    return afterDiscount + (shippingType === 'PAKET' ? shippingCost : 0);
+  }, [subtotal, discount, shippingType, shippingCost]);
 
   const saveQuoter = async (data: any) => {
     try {
-      setIsLoading(true);
-      const payload: any = {};
-      payload.totalAmount = totalCalculate;
-      payload.artist = data.artist;
-      payload.dateLimit = data.dateLimit;
-      payload.products = productQuoters;
-      payload.customProducts = customProducts;
-      payload.discount = discount;
+      setUI((prev) => ({ ...prev, isLoading: true }));
+      const payload = {
+        totalAmount: totalCalculate,
+        artist: data.artist,
+        dateLimit: data.dateLimit,
+        products: productQuoters,
+        customProducts,
+        discount,
+        shippingCost: shippingType === 'PAKET' ? shippingCost : 0,
+        shippingType: shippingType ?? null,
+      };
       const repository = QuoterRepository.instance();
       const { success, quoterNumber } = await repository.saveQuoter(payload);
       if (!success) {
@@ -97,64 +157,24 @@ export default function CreateQuoter({
         return;
       }
       showToast(true, `Cotización #${quoterNumber} guardada correctamente`);
-      setSavedQuoterNumber(quoterNumber);
+      setUI({ isLoading: false, savedQuoterNumber: quoterNumber });
       reset();
-      setDiscount(0);
-      setProductQuoters([
-        {
-          amount: 0,
-          price: 0,
-          isFinished: false,
-          extras: [],
-          product: "",
-          productType: { description: "", price: 0 },
-        },
-      ]);
-      setCustomProducts([]);
+      dispatch({ type: "RESET" });
     } catch (error) {
       console.error("Error save quoter: ", error);
       showToast(false, "Error al guardar la cotización");
     } finally {
-      setIsLoading(false);
+      setUI((prev) => ({ ...prev, isLoading: false }));
     }
   };
 
-  const handleAddProduct = () => {
-    setProductQuoters([
-      ...productQuoters,
-      {
-        amount: 0,
-        price: 0,
-        extras: [],
-        isFinished: false,
-        product: "",
-        productType: { description: "", price: 0 },
-      },
-    ]);
-  };
-
-  const handleExtrasUpdate = (index: number, extras: ProductPrice[]) => {
-    setAvailableExtras((prev) => ({
-      ...prev,
-      [index]: extras
-    }));
-  };
-
-  const handleAddCustomProduct = () => {
-    setCustomProducts([
-      ...customProducts,
-      {
-        description: "",
-        price: 0,
-        amount: 1,
-      },
-    ]);
-  };
-
+  const handleAddProduct = () => dispatch({ type: "ADD_PRODUCT" });
+  const handleAddCustomProduct = () => dispatch({ type: "ADD_CUSTOM_PRODUCT" });
+  const handleExtrasUpdate = (index: number, extras: ProductPrice[]) =>
+    dispatch({ type: "SET_EXTRAS", index, extras });
   const handleDiscountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = parseFloat(e.target.value) || 0;
-    const clampedValue = Math.min(Math.max(value, 0), 100);
-    setDiscount(clampedValue);
+    const value = Math.min(Math.max(parseFloat(e.target.value) || 0, 0), 100);
+    dispatch({ type: "SET_DISCOUNT", payload: value });
   };
 
   return (
@@ -247,6 +267,30 @@ export default function CreateQuoter({
                     )}
                   />
                 </div>
+                <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900/30 p-3 sm:p-4">
+                  <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Tipo de entrega</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {SHIPPING_OPTIONS.map((opt) => (
+                      <button
+                        key={String(opt.key)}
+                        type="button"
+                        onClick={() => dispatch({ type: "SET_SHIPPING_TYPE", payload: opt.key })}
+                        className={`text-left p-2.5 rounded-lg border transition-colors ${
+                          shippingType === opt.key
+                            ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20"
+                            : "border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500"
+                        }`}
+                      >
+                        <p className={`text-xs font-medium ${shippingType === opt.key ? "text-blue-700 dark:text-blue-300" : "text-gray-800 dark:text-gray-200"}`}>
+                          {opt.label}
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                          {opt.hasCost ? (shippingCost > 0 ? formatCurrency(shippingCost) : "Sin costo configurado") : "Sin costo"}
+                        </p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -287,12 +331,12 @@ export default function CreateQuoter({
               
               <div className="space-y-4">
                 {productQuoters.map((item, index) => (
-                  <div key={index}>
+                  <div key={`${formKey}-${index}`}>
                     <ProductForm
                       index={index}
-                      products={products}
+                      products={initialProducts}
                       productQuoters={productQuoters}
-                      setProductQuoters={setProductQuoters}
+                      setProductQuoters={(v) => dispatch({ type: "SET_PRODUCT_QUOTERS", payload: v })}
                       onExtrasUpdate={handleExtrasUpdate}
                     />
                     {productQuoters[index].extras.length > 0 && (
@@ -300,7 +344,7 @@ export default function CreateQuoter({
                         index={index}
                         availableExtras={availableExtras[index] || []}
                         productQuoters={productQuoters}
-                        setProductQuoters={setProductQuoters}
+                        setProductQuoters={(v) => dispatch({ type: "SET_PRODUCT_QUOTERS", payload: v })}
                       />
                     )}
                   </div>
@@ -315,10 +359,10 @@ export default function CreateQuoter({
                     </h3>
                     {customProducts.map((_, index) => (
                       <CustomProductForm
-                        key={index}
+                        key={`${formKey}-${index}`}
                         index={index}
                         customProducts={customProducts}
-                        setCustomProducts={setCustomProducts}
+                        setCustomProducts={(v) => dispatch({ type: "SET_CUSTOM_PRODUCTS", payload: v })}
                       />
                     ))}
                   </div>
@@ -332,10 +376,10 @@ export default function CreateQuoter({
                 <span className="text-red-500">*</span> Campos obligatorios
               </div>
               <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto order-1 sm:order-2">
-                {savedQuoterNumber && (
+                {ui.savedQuoterNumber && (
                   <Button
                     as="a"
-                    href={`/view/cotizacion-${savedQuoterNumber}`}
+                    href={`/view/cotizacion-${ui.savedQuoterNumber}`}
                     target="_blank"
                     color="primary"
                     size="lg"
@@ -343,7 +387,7 @@ export default function CreateQuoter({
                     startContent={<ArrowDownTrayIcon className="h-5 w-5" />}
                     className="font-semibold w-full sm:w-auto"
                   >
-                    Descargar Cotización #{savedQuoterNumber}
+                    Descargar Cotización #{ui.savedQuoterNumber}
                   </Button>
                 )}
                 <Button
@@ -351,11 +395,11 @@ export default function CreateQuoter({
                   color="success"
                   size="lg"
                   variant="shadow"
-                  isLoading={isLoading}
+                  isLoading={ui.isLoading}
                   className="font-semibold w-full sm:w-auto"
-                  onPress={() => setSavedQuoterNumber(null)}
+                  onPress={() => setUI((prev) => ({ ...prev, savedQuoterNumber: null }))}
                 >
-                  {savedQuoterNumber ? "Nueva Cotización" : "Guardar Cotización"}
+                  {ui.savedQuoterNumber ? "Nueva Cotización" : "Guardar Cotización"}
                 </Button>
               </div>
             </div>
@@ -365,7 +409,7 @@ export default function CreateQuoter({
 
       {/* Panel de Total - Sticky (Desktop) */}
       <div className="hidden lg:block">
-        <TotalAmount subtotal={subtotal} discount={discount} totalCalculate={totalCalculate} />
+        <TotalAmount subtotal={subtotal} discount={discount} totalCalculate={totalCalculate} shippingCost={shippingType === 'PAKET' ? shippingCost : 0} shippingLabel={shippingType ? SHIPPING_LABELS[shippingType] : undefined} />
       </div>
       
       {/* Total móvil - Fixed bottom */}
@@ -382,8 +426,16 @@ export default function CreateQuoter({
                 <span className="text-red-500 dark:text-red-400">-{formatCurrency((subtotal * discount) / 100)}</span>
               </div>
             )}
+            {shippingType && (
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-gray-600 dark:text-gray-400">{SHIPPING_LABELS[shippingType]}:</span>
+                <span className="text-gray-900 dark:text-white">
+                  {shippingType === 'PAKET' && shippingCost > 0 ? formatCurrency(shippingCost) : 'Sin costo'}
+                </span>
+              </div>
+            )}
           </div>
-          <div className="flex-shrink-0 text-right">
+          <div className="shrink-0 text-right">
             <span className="block text-xs text-gray-500 dark:text-gray-400">Total</span>
             <span className="text-xl font-bold text-green-600 dark:text-green-400">{formatCurrency(totalCalculate)}</span>
           </div>

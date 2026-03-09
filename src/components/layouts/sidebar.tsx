@@ -10,7 +10,7 @@ import {
 import { Accordion, AccordionItem, Button } from "@heroui/react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 
 interface ISidebarProps {
   toggleOpen?: boolean;
@@ -38,6 +38,10 @@ const naviItems = [
       {
         name: "Productos",
         url: "/admin/products",
+      },
+      {
+        name: "Configuraciones",
+        url: "/admin/settings",
       },
     ],
   },
@@ -140,6 +144,8 @@ function NavContent({ pathname, toggleOpen, mobileOpen }: NavContentProps) {
 
 export default function Sidebar({ toggleOpen = true, mobileOpen = false, setMobileOpen }: ISidebarProps) {
   const pathname = usePathname();
+  // useSyncExternalStore returns false on server, true on client — without extra renders
+  const mounted = useSyncExternalStore(() => () => {}, () => true, () => false);
 
   // Close mobile sidebar on route change
   useEffect(() => {
@@ -173,14 +179,17 @@ export default function Sidebar({ toggleOpen = true, mobileOpen = false, setMobi
 
   return (
     <>
-      {/* Mobile overlay */}
-      {mobileOpen && (
-        <div 
-          className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm lg:hidden"
-          onClick={() => setMobileOpen?.(false)}
-          aria-hidden="true"
-        />
-      )}
+      {/* Mobile sidebar — only rendered client-side to avoid react-aria hydration mismatch from duplicate NavContent */}
+      {mounted && (
+        <>
+          {/* Mobile overlay */}
+          {mobileOpen && (
+            <div
+              className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm lg:hidden"
+              onClick={() => setMobileOpen?.(false)}
+              aria-hidden="true"
+            />
+          )}
 
       {/* Mobile sidebar */}
       <aside
@@ -215,6 +224,8 @@ export default function Sidebar({ toggleOpen = true, mobileOpen = false, setMobi
           <NavContent pathname={pathname} toggleOpen={toggleOpen} mobileOpen={mobileOpen} />
         </div>
       </aside>
+        </>
+      )}
 
       {/* Desktop sidebar */}
       <aside

@@ -1,8 +1,9 @@
 "use client";
 
-import { Quoter, ProductsQuoter } from "@/entities/Quoter";
+import { Quoter, ProductsQuoter, SHIPPING_LABELS, SHIPPING_OPTIONS, ShippingType } from "@/entities/Quoter";
 import { ProductDoc } from "@/entities/Product";
 import { QuoterRepository } from "@/data/quoter.repository";
+import { SettingsRepository } from "@/data/settings.repository";
 import formatCurrency from "@/utils/formatCurrency";
 import {
   Card,
@@ -24,7 +25,7 @@ import {
   EyeIcon,
   DocumentTextIcon,
 } from "@heroicons/react/24/outline";
-import { useContext, useState } from "react";
+import { useContext, useEffect, useReducer } from "react";
 import { ToastContext } from "@/components/elements/Toast/ToastComponent";
 import { useRouter } from "next/navigation";
 
@@ -32,15 +33,74 @@ interface OrderCardProps {
   quoter: Quoter;
 }
 
+// ── Reducer ──────────────────────────────────────────────────────────────────
+type OrderCardState = {
+  showModal: boolean;
+  loading: boolean;
+  invoiceInput: string;
+  products: ProductsQuoter[];
+  shippingType: string | null;
+  configuredShipping: number;
+};
+
+type OrderCardAction =
+  | { type: "OPEN_MODAL" }
+  | { type: "CLOSE_MODAL" }
+  | { type: "SET_LOADING"; payload: boolean }
+  | { type: "SET_INVOICE_INPUT"; payload: string }
+  | { type: "SET_PRODUCTS"; payload: ProductsQuoter[] }
+  | { type: "TOGGLE_PRODUCT"; index: number }
+  | { type: "SET_SHIPPING_TYPE"; payload: string | null }
+  | { type: "SET_CONFIGURED_SHIPPING"; payload: number };
+
+function orderCardReducer(state: OrderCardState, action: OrderCardAction): OrderCardState {
+  switch (action.type) {
+    case "OPEN_MODAL":
+      return { ...state, showModal: true };
+    case "CLOSE_MODAL":
+      return { ...state, showModal: false };
+    case "SET_LOADING":
+      return { ...state, loading: action.payload };
+    case "SET_INVOICE_INPUT":
+      return { ...state, invoiceInput: action.payload };
+    case "SET_PRODUCTS":
+      return { ...state, products: action.payload };
+    case "TOGGLE_PRODUCT": {
+      const updated = [...state.products];
+      updated[action.index] = { ...updated[action.index], isFinished: !updated[action.index].isFinished };
+      return { ...state, products: updated };
+    }
+    case "SET_SHIPPING_TYPE":
+      return { ...state, shippingType: action.payload };
+    case "SET_CONFIGURED_SHIPPING":
+      return { ...state, configuredShipping: action.payload };
+    default:
+      return state;
+  }
+}
+
+// ── Component ──────────────────────────────────────────────────────────────────
 export default function OrderCard({ quoter }: OrderCardProps) {
-  const [showModal, setShowModal] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [invoiceInput, setInvoiceInput] = useState(quoter.invoiceNumber || "");
-  const [products, setProducts] = useState<ProductsQuoter[]>(
-    quoter.products || []
-  );
+  const [state, dispatch] = useReducer(orderCardReducer, {
+    showModal: false,
+    loading: false,
+    invoiceInput: quoter.invoiceNumber || "",
+    products: quoter.products || [],
+    shippingType: (quoter.shippingType ?? ((quoter.shippingCost ?? 0) > 0 ? 'PAKET' : null)) as string | null,
+    configuredShipping: quoter.shippingCost ?? 0,
+  });
+  const { showModal, loading, invoiceInput, products, shippingType, configuredShipping } = state;
   const { showToast } = useContext(ToastContext);
   const router = useRouter();
+
+  useEffect(() => {
+    SettingsRepository.instance()
+      .getSettings()
+      .then((data) => {
+        if (data.success) dispatch({ type: "SET_CONFIGURED_SHIPPING", payload: data.settings.shippingCost });
+      })
+      .catch(() => {});
+  }, []);
 
   const finishedCount = products.filter((p) => p.isFinished).length;
   const totalCount = products.length;
@@ -55,22 +115,15 @@ export default function OrderCard({ quoter }: OrderCardProps) {
   };
 
   const handleToggleProduct = async (index: number) => {
-    setLoading(true);
+    dispatch({ type: "SET_LOADING", payload: true });
     try {
       const repo = QuoterRepository.instance();
       const res = await repo.toggleProductFinished(quoter._id!, index);
       if (res.success) {
-        // Update local state
-        const updated = [...products];
-        updated[index] = {
-          ...updated[index],
-          isFinished: !updated[index].isFinished,
-        };
-        setProducts(updated);
-
+        dispatch({ type: "TOGGLE_PRODUCT", index });
         if (res.allFinished) {
           showToast(true, "¡Orden completada!", "Todos los productos están listos");
-          setShowModal(false);
+          dispatch({ type: "CLOSE_MODAL" });
           router.refresh();
         }
       } else {
@@ -79,13 +132,13 @@ export default function OrderCard({ quoter }: OrderCardProps) {
     } catch {
       showToast(false, "Error al actualizar producto");
     } finally {
-      setLoading(false);
+      dispatch({ type: "SET_LOADING", payload: false });
     }
   };
 
   const handleSaveInvoice = async () => {
     if (!invoiceInput.trim()) return;
-    setLoading(true);
+    dispatch({ type: "SET_LOADING", payload: true });
     try {
       const repo = QuoterRepository.instance();
       const res = await repo.setInvoiceNumber(quoter._id!, invoiceInput.trim());
@@ -97,12 +150,35 @@ export default function OrderCard({ quoter }: OrderCardProps) {
     } catch {
       showToast(false, "Error al guardar folio");
     } finally {
-      setLoading(false);
+      dispatch({ type: "SET_LOADING", payload: false });
     }
   };
 
   const handleDownloadPDF = () => {
-    window.open(`/view/cotizacion-${quoter.quoterNumber}`, "_blank");
+    window.open(`/api/quoter/${quoter.quoterNumber}/pdf`, "_blank");
+  };
+
+  const handleChangeShipping = async (newType: string | null) => {
+    const prevType = shippingType;
+    dispatch({ type: "SET_SHIPPING_TYPE", payload: newType });
+    dispatch({ type: "SET_LOADING", payload: true });
+    try {
+      const repo = QuoterRepository.instance();
+      const newCost = newType === 'PAKET' ? configuredShipping : 0;
+      const res = await repo.updateShipping(quoter._id!, newCost, newType);
+      if (res.success) {
+        showToast(true, newType ? SHIPPING_LABELS[newType as ShippingType] : "Sin envío");
+        router.refresh();
+      } else {
+        dispatch({ type: "SET_SHIPPING_TYPE", payload: prevType });
+        showToast(false, "Error al actualizar envío");
+      }
+    } catch {
+      dispatch({ type: "SET_SHIPPING_TYPE", payload: prevType });
+      showToast(false, "Error al actualizar envío");
+    } finally {
+      dispatch({ type: "SET_LOADING", payload: false });
+    }
   };
 
   const progressColor =
@@ -115,7 +191,7 @@ export default function OrderCard({ quoter }: OrderCardProps) {
   return (
     <>
       <Card className="border border-gray-700 bg-white dark:bg-gray-800/50 transition-all hover:border-primary/50 cursor-pointer">
-        <CardBody className="p-4 space-y-3" onClick={() => setShowModal(true)}>
+        <CardBody className="p-4 space-y-3" onClick={() => dispatch({ type: "OPEN_MODAL" })}>
           {/* Header */}
           <div className="flex justify-between items-start">
             <div className="min-w-0 flex-1">
@@ -172,7 +248,7 @@ export default function OrderCard({ quoter }: OrderCardProps) {
               variant="flat"
               color="primary"
               className="flex-1 text-xs"
-              onPress={() => setShowModal(true)}
+              onPress={() => dispatch({ type: "OPEN_MODAL" })}
               startContent={<EyeIcon className="w-3.5 h-3.5" />}
             >
               Detalle
@@ -195,7 +271,7 @@ export default function OrderCard({ quoter }: OrderCardProps) {
       <Modal
         size="3xl"
         isOpen={showModal}
-        onClose={() => setShowModal(false)}
+        onClose={() => dispatch({ type: "CLOSE_MODAL" })}
         scrollBehavior="inside"
       >
         <ModalContent>
@@ -308,7 +384,7 @@ export default function OrderCard({ quoter }: OrderCardProps) {
                   size="sm"
                   placeholder="Ej: FAC-001"
                   value={invoiceInput}
-                  onValueChange={setInvoiceInput}
+                  onValueChange={(v) => dispatch({ type: "SET_INVOICE_INPUT", payload: v })}
                   className="flex-1"
                 />
                 <Button
@@ -319,6 +395,31 @@ export default function OrderCard({ quoter }: OrderCardProps) {
                 >
                   Guardar
                 </Button>
+              </div>
+            </div>
+
+            {/* Shipping type selector */}
+            <div className="space-y-1.5">
+              <p className="text-sm font-semibold text-gray-900 dark:text-white">Tipo de entrega</p>
+              <div className="grid grid-cols-2 gap-1.5">
+                {SHIPPING_OPTIONS.map((opt) => (
+                  <button
+                    key={String(opt.key)}
+                    type="button"
+                    disabled={loading}
+                    onClick={() => handleChangeShipping(opt.key)}
+                    className={`text-xs px-2 py-1.5 rounded border transition-colors ${
+                      shippingType === opt.key
+                        ? 'border-blue-500 bg-blue-500/10 text-blue-600 dark:text-blue-400 font-medium'
+                        : 'border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600'
+                    }`}
+                  >
+                    {opt.key === null ? 'Sin envío'
+                      : opt.key === 'PAKET' && configuredShipping > 0
+                        ? `PAKET (${formatCurrency(configuredShipping)})`
+                        : opt.label}
+                  </button>
+                ))}
               </div>
             </div>
 
@@ -333,7 +434,7 @@ export default function OrderCard({ quoter }: OrderCardProps) {
             </div>
           </ModalBody>
           <ModalFooter>
-            <Button variant="light" onPress={() => setShowModal(false)}>
+            <Button variant="light" onPress={() => dispatch({ type: "CLOSE_MODAL" })}>
               Cerrar
             </Button>
             <Button

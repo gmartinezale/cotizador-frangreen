@@ -4,6 +4,7 @@ import { Quoter } from "@/entities/Quoter";
 interface GetQuotersResponse {
   success: boolean;
   quotersPending: Quoter[];
+  quotersPayment: Quoter[];
   quotersProcess: Quoter[];
   quotersCompleted: Quoter[];
 }
@@ -44,6 +45,21 @@ export class QuoterRepository {
     });
   }
 
+  startOrder(quoterId: string): Promise<PatchQuoterResponse> {
+    return this._service.patch("/admin/quoter/api", {
+      action: "START_ORDER",
+      quoterId,
+    });
+  }
+
+  updateDateLimit(quoterId: string, dateLimit: string): Promise<PatchQuoterResponse> {
+    return this._service.patch("/admin/quoter/api", {
+      action: "UPDATE_DATE_LIMIT",
+      quoterId,
+      dateLimit,
+    });
+  }
+
   deleteQuoter(quoterId: string): Promise<PatchQuoterResponse> {
     return this._service.patch("/admin/quoter/api", {
       action: "DELETE",
@@ -64,6 +80,30 @@ export class QuoterRepository {
       action: "SET_INVOICE",
       quoterId,
       invoiceNumber,
+    });
+  }
+
+  updateShipping(quoterId: string, shippingCost: number, shippingType?: string | null): Promise<PatchQuoterResponse & { shippingCost?: number; shippingType?: string | null; totalAmount?: number }> {
+    return this._service.patch("/admin/quoter/api", {
+      action: "UPDATE_SHIPPING",
+      quoterId,
+      shippingCost,
+      shippingType: shippingType ?? null,
+    });
+  }
+
+  editQuoter(quoterId: string, body: {
+    products: any[];
+    customProducts: any[];
+    discount: number;
+    shippingCost: number;
+    shippingType: string | null;
+    totalAmount: number;
+  }): Promise<PatchQuoterResponse> {
+    return this._service.patch("/admin/quoter/api", {
+      action: "EDIT_QUOTER",
+      quoterId,
+      ...body,
     });
   }
 }

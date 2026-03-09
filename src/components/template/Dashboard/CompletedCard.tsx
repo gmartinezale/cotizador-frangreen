@@ -29,7 +29,7 @@ export default function CompletedCard({ quoter }: CompletedCardProps) {
     (quoter.products?.length || 0) + (quoter.customProducts?.length || 0);
 
   const handleDownloadPDF = () => {
-    window.open(`/view/cotizacion-${quoter.quoterNumber}`, "_blank");
+    window.open(`/api/quoter/${quoter.quoterNumber}/pdf`, "_blank");
   };
 
   return (

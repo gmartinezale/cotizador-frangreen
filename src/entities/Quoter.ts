@@ -1,5 +1,25 @@
 import { ProductDoc } from "./Product";
 
+// Shipping / delivery types
+export type ShippingType = 'PAKET' | 'REGION' | 'EVENTO';
+
+export const SHIPPING_LABELS: Record<ShippingType, string> = {
+  PAKET: 'Envío por PAKET',
+  REGION: 'Envío a región',
+  EVENTO: 'Entrega en evento',
+};
+
+export const SHIPPING_OPTIONS: Array<{
+  key: ShippingType | null;
+  label: string;
+  hasCost: boolean;
+}> = [
+  { key: null, label: 'Sin envío', hasCost: false },
+  { key: 'PAKET', label: 'Envío por PAKET', hasCost: true },
+  { key: 'REGION', label: 'Envío a región', hasCost: false },
+  { key: 'EVENTO', label: 'Entrega en evento', hasCost: false },
+];
+
 // Extra product added to quotation
 export type ExtraProductQuoter = {
   description: string;
@@ -50,6 +70,8 @@ export type Quoter = {
   fileSended: boolean;
   status: string;
   discount: number; // Percentage discount (0-100)
+  shippingCost?: number; // Shipping cost snapshot from settings
+  shippingType?: ShippingType | null; // Delivery/shipping method
   statusChanges: StatusChange[];
   createdAt: Date;
   updatedAt: Date;

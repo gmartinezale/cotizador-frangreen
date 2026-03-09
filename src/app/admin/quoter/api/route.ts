@@ -43,6 +43,8 @@ function basePopulateQuoter(pipeline: PipelineStage[]) {
       dateLimit: 1,
       fileSended: 1,
       discount: 1,
+      shippingCost: 1,
+      shippingType: 1,
       status: 1,
       statusChanges: 1,
       customProducts: 1,
@@ -93,6 +95,7 @@ export async function GET() {
           active: true,
         },
       },
+      { $sort: { createdAt: -1 } },
     ];
 
     basePopulateQuoter(pipeline);
@@ -105,16 +108,11 @@ export async function GET() {
       });
     }
 
-    const quotersPending = quoters.filter(
-      (quoter: any) => quoter.status === "PENDIENTE",
-    );
-    const quotersProcess = quoters.filter(
-      (quoter: any) => quoter.status === "PAGADO",
-    );
-    const quotersCompleted = quoters.filter(
-      (quoter: any) => quoter.status === "COMPLETA",
-    );
-    return Response.json({ success: true, quotersPending, quotersProcess, quotersCompleted });
+    const quotersPending = quoters.filter((q: any) => q.status === "PENDIENTE");
+    const quotersPayment = quoters.filter((q: any) => q.status === "PAGADO");
+    const quotersProcess = quoters.filter((q: any) => q.status === "EN PROCESO");
+    const quotersCompleted = quoters.filter((q: any) => q.status === "COMPLETA");
+    return Response.json({ success: true, quotersPending, quotersPayment, quotersProcess, quotersCompleted });
   } catch (error) {
     safeErrorLog("Error getting quoters", error);
     return new Response(JSON.stringify({ success: false }), {
@@ -135,12 +133,14 @@ export async function POST(request: Request) {
     }
 
     await connectDB();
-    const { totalAmount, artist, dateLimit, products, customProducts, discount } = await request.json();
+    const { totalAmount, artist, dateLimit, products, customProducts, discount, shippingCost, shippingType } = await request.json();
     const validationSchema = z.object({
       totalAmount: z.number(),
       artist: z.string(),
       dateLimit: z.string().optional(),
       discount: z.number().min(0).max(100).optional().default(0),
+      shippingCost: z.number().min(0).optional().default(0),
+      shippingType: z.enum(['PAKET', 'REGION', 'EVENTO']).nullable().optional(),
       products: z.array(
         z.object({
           product: z.string(), // Product ID
@@ -179,6 +179,8 @@ export async function POST(request: Request) {
       products,
       customProducts,
       discount,
+      shippingCost,
+      shippingType,
     });
     if (!validation.success) {
       return new Response(
@@ -206,6 +208,8 @@ export async function POST(request: Request) {
       products,
       customProducts: customProducts || [],
       discount: discount || 0,
+      shippingCost: shippingCost || 0,
+      shippingType: shippingType ?? null,
       active: true,
       status: "PENDIENTE",
     });
@@ -267,6 +271,31 @@ export async function PATCH(request: Request) {
       return Response.json({ success: true, orderNumber });
     }
 
+    // Start order: PAGADO → EN PROCESO
+    if (action === "START_ORDER") {
+      const quoter = await Quoter.findById(quoterId);
+      if (!quoter) return new Response(JSON.stringify({ success: false }), { status: 404 });
+      if (quoter.status !== "PAGADO") {
+        return new Response(JSON.stringify({ success: false, message: "La orden debe estar en estado PAGADO" }), { status: 400 });
+      }
+      quoter.status = "EN PROCESO";
+      quoter.statusChanges.push({ status: "EN PROCESO", date: new Date() });
+      await quoter.save();
+      return Response.json({ success: true });
+    }
+
+    // Update date limit (allowed while PAGADO)
+    if (action === "UPDATE_DATE_LIMIT") {
+      const { dateLimit } = body;
+      const quoter = await Quoter.findByIdAndUpdate(
+        quoterId,
+        { dateLimit: dateLimit ? new Date(dateLimit) : null },
+        { new: true }
+      );
+      if (!quoter) return new Response(JSON.stringify({ success: false }), { status: 404 });
+      return Response.json({ success: true });
+    }
+
     // Delete (soft): set active to false
     if (action === "DELETE") {
       const quoter = await Quoter.findByIdAndUpdate(
@@ -297,9 +326,9 @@ export async function PATCH(request: Request) {
 
       quoter.products[productIndex].isFinished = !quoter.products[productIndex].isFinished;
 
-      // Check if all products are finished
+      // Check if all products are finished — only auto-complete from EN PROCESO
       const allFinished = quoter.products.every((p: any) => p.isFinished);
-      if (allFinished) {
+      if (allFinished && quoter.status === "EN PROCESO") {
         quoter.status = "COMPLETA";
         quoter.statusChanges.push({ status: "COMPLETA", date: new Date() });
       }
@@ -322,6 +351,81 @@ export async function PATCH(request: Request) {
       if (!quoter) {
         return new Response(JSON.stringify({ success: false }), { status: 404 });
       }
+      return Response.json({ success: true });
+    }
+
+    // Update shipping cost
+    if (action === "UPDATE_SHIPPING") {
+      const { shippingCost, shippingType } = body;
+      if (typeof shippingCost !== "number" || shippingCost < 0) {
+        return new Response(JSON.stringify({ success: false, message: "shippingCost inválido" }), { status: 400 });
+      }
+      const validShippingTypes = ['PAKET', 'REGION', 'EVENTO', null];
+      if (!validShippingTypes.includes(shippingType ?? null)) {
+        return new Response(JSON.stringify({ success: false, message: "shippingType inválido" }), { status: 400 });
+      }
+
+      const quoter = await Quoter.findById(quoterId);
+      if (!quoter) {
+        return new Response(JSON.stringify({ success: false }), { status: 404 });
+      }
+
+      const prevShipping = quoter.shippingCost ?? 0;
+      const delta = shippingCost - prevShipping;
+      quoter.shippingCost = shippingCost;
+      quoter.shippingType = shippingType ?? null;
+      quoter.totalAmount = (quoter.totalAmount ?? 0) + delta;
+      await quoter.save();
+
+      return Response.json({ success: true, shippingCost, shippingType: quoter.shippingType, totalAmount: quoter.totalAmount });
+    }
+
+    // Edit pending quotation (products, quantities, custom products, discount)
+    if (action === "EDIT_QUOTER") {
+      const { products, customProducts, discount, shippingCost, shippingType, totalAmount } = body;
+
+      const editSchema = z.object({
+        totalAmount: z.number(),
+        discount: z.number().min(0).max(100).default(0),
+        shippingCost: z.number().min(0).default(0),
+        shippingType: z.enum(['PAKET', 'REGION', 'EVENTO']).nullable().optional(),
+        products: z.array(z.object({
+          product: z.string(),
+          productType: z.object({ description: z.string(), price: z.number() }),
+          productFinish: z.object({ description: z.string(), price: z.number() }).optional(),
+          amount: z.number().min(0),
+          price: z.number().min(0),
+          isFinished: z.boolean(),
+          extras: z.array(z.object({ amount: z.number(), description: z.string(), price: z.number() })),
+        })),
+        customProducts: z.array(z.object({
+          description: z.string(),
+          price: z.number().min(0),
+          amount: z.number().min(0),
+        })).default([]),
+      });
+
+      const validation = editSchema.safeParse({ totalAmount, discount, shippingCost, shippingType, products, customProducts });
+      if (!validation.success) {
+        return new Response(JSON.stringify({ success: false, message: "Parámetros inválidos", errors: validation.error.errors }), { status: 400 });
+      }
+
+      const quoter = await Quoter.findById(quoterId);
+      if (!quoter) {
+        return new Response(JSON.stringify({ success: false }), { status: 404 });
+      }
+      if (quoter.status !== "PENDIENTE") {
+        return new Response(JSON.stringify({ success: false, message: "Solo se pueden editar cotizaciones pendientes" }), { status: 400 });
+      }
+
+      quoter.products = validation.data.products;
+      quoter.customProducts = validation.data.customProducts;
+      quoter.discount = validation.data.discount;
+      quoter.shippingCost = validation.data.shippingCost;
+      quoter.shippingType = validation.data.shippingType ?? undefined;
+      quoter.totalAmount = validation.data.totalAmount;
+      await quoter.save();
+
       return Response.json({ success: true });
     }
 

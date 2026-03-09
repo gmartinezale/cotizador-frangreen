@@ -3,6 +3,8 @@
 import { Quoter } from "@/entities/Quoter";
 import { ProductDoc } from "@/entities/Product";
 import { QuoterRepository } from "@/data/quoter.repository";
+import { SettingsRepository } from "@/data/settings.repository";
+import { SHIPPING_LABELS, SHIPPING_OPTIONS, ShippingType } from "@/entities/Quoter";
 import formatCurrency from "@/utils/formatCurrency";
 import { Card, CardBody, Button, Tooltip } from "@heroui/react";
 import {
@@ -10,19 +12,39 @@ import {
   CheckIcon,
   DocumentArrowDownIcon,
   ExclamationTriangleIcon,
+  PencilSquareIcon,
 } from "@heroicons/react/24/outline";
-import { useContext, useState } from "react";
+import { useContext, useState, useEffect } from "react";
 import { ToastContext } from "@/components/elements/Toast/ToastComponent";
 import { useRouter } from "next/navigation";
+import EditQuoterModal from "./EditQuoterModal";
 
 interface PendingCardProps {
   quoter: Quoter;
 }
 
+function deriveShippingType(quoter: Quoter): ShippingType | null {
+  if (quoter.shippingType) return quoter.shippingType as ShippingType;
+  // Backward compat: old quotations without shippingType field
+  return (quoter.shippingCost ?? 0) > 0 ? 'PAKET' : null;
+}
+
 export default function PendingCard({ quoter }: PendingCardProps) {
   const [loading, setLoading] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [shippingType, setShippingType] = useState<ShippingType | null>(deriveShippingType(quoter));
+  const [configuredShipping, setConfiguredShipping] = useState<number>(quoter.shippingCost ?? 0);
   const { showToast } = useContext(ToastContext);
   const router = useRouter();
+
+  useEffect(() => {
+    SettingsRepository.instance()
+      .getSettings()
+      .then((data) => {
+        if (data.success) setConfiguredShipping(data.settings.shippingCost);
+      })
+      .catch(() => {});
+  }, []);
 
   // Calculate if quotation is older than 3 days
   const createdDate = new Date(quoter.createdAt);
@@ -85,10 +107,34 @@ export default function PendingCard({ quoter }: PendingCardProps) {
   };
 
   const handleDownloadPDF = () => {
-    window.open(`/view/cotizacion-${quoter.quoterNumber}`, "_blank");
+    window.open(`/api/quoter/${quoter.quoterNumber}/pdf`, "_blank");
+  };
+
+  const handleToggleShipping = async (newType: ShippingType | null) => {
+    const prevType = shippingType;
+    setShippingType(newType);
+    setLoading(true);
+    try {
+      const repo = QuoterRepository.instance();
+      const newCost = newType === 'PAKET' ? configuredShipping : 0;
+      const res = await repo.updateShipping(quoter._id!, newCost, newType);
+      if (res.success) {
+        showToast(true, newType ? SHIPPING_LABELS[newType] : "Sin envío");
+        router.refresh();
+      } else {
+        setShippingType(prevType);
+        showToast(false, "Error al actualizar envío");
+      }
+    } catch {
+      setShippingType(prevType);
+      showToast(false, "Error al actualizar envío");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
+    <>
     <Card
       className={`border transition-all ${
         isOverdue
@@ -142,6 +188,40 @@ export default function PendingCard({ quoter }: PendingCardProps) {
               </span>
             </div>
           )}
+          {quoter.shippingType && (
+            <div className="flex justify-between text-xs">
+              <span className="text-gray-500 dark:text-gray-400">Entrega</span>
+              <span className="text-blue-400 font-medium">
+                {SHIPPING_LABELS[quoter.shippingType as ShippingType]}
+                {quoter.shippingType === 'PAKET' && quoter.shippingCost ? ` (${formatCurrency(quoter.shippingCost)})` : ''}
+              </span>
+            </div>
+          )}
+        </div>
+
+        {/* Shipping type selector */}
+        <div className="space-y-1.5">
+          <p className="text-xs text-gray-500 dark:text-gray-400">Tipo de entrega</p>
+          <div className="grid grid-cols-2 gap-1">
+            {SHIPPING_OPTIONS.map((opt) => (
+              <button
+                key={String(opt.key)}
+                type="button"
+                disabled={loading}
+                onClick={() => handleToggleShipping(opt.key)}
+                className={`text-xs px-2 py-1.5 rounded border transition-colors ${
+                  shippingType === opt.key
+                    ? 'border-blue-500 bg-blue-500/10 text-blue-600 dark:text-blue-400 font-medium'
+                    : 'border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600'
+                }`}
+              >
+                {opt.key === null ? 'Sin envío'
+                  : opt.key === 'PAKET' && configuredShipping > 0
+                    ? `PAKET (${formatCurrency(configuredShipping)})`
+                    : opt.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Product names preview */}
@@ -166,6 +246,17 @@ export default function PendingCard({ quoter }: PendingCardProps) {
           >
             Marcar como pagada
           </Button>
+          <Tooltip content="Editar cotización">
+            <Button
+              size="sm"
+              color="primary"
+              variant="flat"
+              isIconOnly
+              onPress={() => setShowEditModal(true)}
+            >
+              <PencilSquareIcon className="w-4 h-4" />
+            </Button>
+          </Tooltip>
           <Tooltip content="Descargar PDF">
             <Button
               size="sm"
@@ -191,5 +282,12 @@ export default function PendingCard({ quoter }: PendingCardProps) {
         </div>
       </CardBody>
     </Card>
+
+    <EditQuoterModal
+      quoter={quoter}
+      isOpen={showEditModal}
+      onClose={() => setShowEditModal(false)}
+    />
+    </>
   );
 }

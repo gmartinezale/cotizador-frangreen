@@ -27,6 +27,8 @@ interface QuoterData {
   products: QuoterProduct[];
   customProducts: CustomProduct[];
   discount: number;
+  shippingCost?: number;
+  shippingType?: string | null;
   dateLimit?: string;
   status: string;
   createdAt: string;
@@ -87,7 +89,8 @@ export default function QuoterPDFView({ quoter }: QuoterPDFViewProps) {
 
   const grossTotal = lineItems.reduce((acc, item) => acc + item.total, 0);
   const discountAmount = quoter.discount > 0 ? (grossTotal * quoter.discount) / 100 : 0;
-  const total = grossTotal - discountAmount;
+  const shippingCost = quoter.shippingCost ?? 0;
+  const total = grossTotal - discountAmount + shippingCost;
   // Desglose IVA: los precios ya incluyen 19% IVA
   const neto = Math.round(total / 1.19);
   const iva = total - neto;
@@ -229,8 +232,19 @@ export default function QuoterPDFView({ quoter }: QuoterPDFViewProps) {
                       -{formatCurrency(discountAmount)}
                     </span>
                   </div>
-                )}
-                <div className="flex justify-between py-2 border-b border-gray-200">
+                )}                {(shippingCost > 0 || quoter.shippingType) && (
+                  <div className="flex justify-between py-2 border-b border-gray-200">
+                    <span className="font-semibold text-sm text-gray-700">
+                      {quoter.shippingType === 'PAKET' ? 'ENVÍO POR PAKET'
+                        : quoter.shippingType === 'REGION' ? 'ENVÍO A REGIÓN'
+                        : quoter.shippingType === 'EVENTO' ? 'ENTREGA EN EVENTO'
+                        : 'COSTO DE ENVÍO'}:
+                    </span>
+                    <span className="text-sm text-gray-800 font-medium">
+                      {shippingCost > 0 ? formatCurrency(shippingCost) : 'Sin costo'}
+                    </span>
+                  </div>
+                )}                <div className="flex justify-between py-2 border-b border-gray-200">
                   <span className="font-semibold text-sm text-gray-700">NETO:</span>
                   <span className="text-sm text-gray-800 font-medium">{formatCurrency(neto)}</span>
                 </div>

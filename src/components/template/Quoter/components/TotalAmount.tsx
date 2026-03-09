@@ -7,12 +7,17 @@ interface TotalAmountProps {
   subtotal: number;
   discount: number;
   totalCalculate: number;
+  shippingCost?: number;
+  /** Human-readable shipping label, e.g. "Envío por PAKET" */
+  shippingLabel?: string;
 }
 
 export function TotalAmount({
   subtotal,
   discount,
   totalCalculate,
+  shippingCost = 0,
+  shippingLabel,
 }: TotalAmountProps) {
   const discountAmount = (subtotal * discount) / 100;
 
@@ -33,6 +38,13 @@ export function TotalAmount({
               </div>
               <Divider className="bg-gray-200 dark:bg-gray-700" />
             </>
+          )}
+
+          {(shippingCost > 0 || shippingLabel) && (
+            <div className="flex justify-between items-center text-sm">
+              <span className="text-gray-600 dark:text-gray-400">{shippingLabel ?? 'Envío'}:</span>
+              <span className="text-gray-900 dark:text-white font-medium">{shippingCost > 0 ? formatCurrency(shippingCost) : 'Sin costo'}</span>
+            </div>
           )}
           
           <div className="flex justify-between items-center pt-1">

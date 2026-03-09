@@ -15,11 +15,13 @@ async function QuoterDashboardWrapper() {
     const {
       success,
       quotersPending,
+      quotersPayment,
       quotersProcess,
       quotersCompleted,
     }: {
       success: boolean;
       quotersPending: Quoter[];
+      quotersPayment: Quoter[];
       quotersProcess: Quoter[];
       quotersCompleted: Quoter[];
     } = await repository.getQuoters();
@@ -31,6 +33,7 @@ async function QuoterDashboardWrapper() {
     return (
       <QuoterDashboard
         quotersPending={quotersPending}
+        quotersPayment={quotersPayment}
         quotersProcess={quotersProcess}
         quotersCompleted={quotersCompleted}
       />

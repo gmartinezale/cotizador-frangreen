@@ -1,4 +1,4 @@
-import { Document, Schema, model } from "mongoose";
+import { Document, Schema, model, models } from "mongoose";
 import "./product";
 import { Product } from "@/entities/Product";
 import { IProductPrice, ProductPriceSchema } from "@/interfaces/ProductInterface";
@@ -40,6 +40,8 @@ interface IQuoter extends Document {
   dateLimit: Date;
   fileSended: boolean;
   discount: number; // Percentage discount (0-100)
+  shippingCost?: number; // Shipping cost from settings
+  shippingType?: string; // 'PAKET' | 'REGION' | 'EVENTO' | null
   status: string;
   statusChanges: { status: string; date: Date }[];
 }
@@ -82,10 +84,12 @@ const QuoterSchema = new Schema<IQuoter>(
     dateLimit: Date,
     fileSended: { type: Boolean, default: false },
     discount: { type: Number }, // Percentage discount
+    shippingCost: { type: Number, default: 0 }, // Shipping cost snapshot from settings
+    shippingType: { type: String, enum: ['PAKET', 'REGION', 'EVENTO', null], default: null }, // Delivery/shipping type
     status: {
       type: String,
       default: "PENDIENTE",
-      enum: ["PENDIENTE", "PAGADO", "COMPLETA", "ANULADO"],
+      enum: ["PENDIENTE", "PAGADO", "EN PROCESO", "COMPLETA", "ANULADO"],
     },
     statusChanges: [
       {
@@ -98,11 +102,11 @@ const QuoterSchema = new Schema<IQuoter>(
   { timestamps: true },
 );
 
-let Quoter: any;
-try {
-  Quoter = model("Quoter");
-} catch (error) {
-  Quoter = model<IQuoter>("Quoter", QuoterSchema);
+// Always rebuild the model so schema changes are picked up on hot-reload in dev.
+// In production the connection is established once and this module runs once too.
+if (models["Quoter"]) {
+  delete (models as any)["Quoter"];
 }
+const Quoter = model<IQuoter>("Quoter", QuoterSchema);
 
 export default Quoter;
