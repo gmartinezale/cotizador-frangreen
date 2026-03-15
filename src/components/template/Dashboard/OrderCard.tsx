@@ -388,8 +388,8 @@ export default function OrderCard({ quoter }: OrderCardProps) {
                       >
                         {getProductName(product.product)}
                       </p>
-                      <p className="text-xs text-gray-500">
-                        {product.productType?.description} — Cant: {product.amount}
+                      <p className="text-sm text-gray-400">
+                        {product.productType?.description} {product.productFinish?.description} — Cant: {product.amount}
                       </p>
                     </div>
                   </div>
