@@ -75,6 +75,14 @@ export class QuoterRepository {
     });
   }
 
+  toggleCustomProductFinished(quoterId: string, productIndex: number): Promise<PatchQuoterResponse> {
+    return this._service.patch("/admin/quoter/api", {
+      action: "TOGGLE_CUSTOM_PRODUCT",
+      quoterId,
+      productIndex,
+    });
+  }
+
   setInvoiceNumber(quoterId: string, invoiceNumber: string): Promise<PatchQuoterResponse> {
     return this._service.patch("/admin/quoter/api", {
       action: "SET_INVOICE",

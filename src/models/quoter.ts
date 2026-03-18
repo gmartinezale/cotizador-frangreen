@@ -15,6 +15,7 @@ interface ICustomProduct {
   description: string;
   price: number;
   amount: number;
+  isFinished?: boolean;
 }
 
 // Product item in quotation with selected type, finish and extras
@@ -79,6 +80,7 @@ const QuoterSchema = new Schema<IQuoter>(
         description: { type: String, required: true },
         price: { type: Number, required: true, min: 0 },
         amount: { type: Number, required: true, min: 1 },
+        isFinished: { type: Boolean, default: false },
       },
     ],
     dateLimit: Date,

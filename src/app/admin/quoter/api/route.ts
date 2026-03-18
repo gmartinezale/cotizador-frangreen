@@ -326,8 +326,36 @@ export async function PATCH(request: Request) {
 
       quoter.products[productIndex].isFinished = !quoter.products[productIndex].isFinished;
 
-      // Check if all products are finished — only auto-complete from EN PROCESO
-      const allFinished = quoter.products.every((p: any) => p.isFinished);
+      // Check if all products AND custom products are finished — only auto-complete from EN PROCESO
+      const allFinished =
+        quoter.products.every((p: any) => p.isFinished) &&
+        (quoter.customProducts ?? []).every((p: any) => p.isFinished);
+      if (allFinished && quoter.status === "EN PROCESO") {
+        quoter.status = "COMPLETA";
+        quoter.statusChanges.push({ status: "COMPLETA", date: new Date() });
+      }
+
+      await quoter.save();
+      return Response.json({ success: true, allFinished });
+    }
+
+    // Toggle custom product isFinished
+    if (action === "TOGGLE_CUSTOM_PRODUCT") {
+      if (productIndex === undefined) {
+        return new Response(JSON.stringify({ success: false, message: "productIndex requerido" }), { status: 400 });
+      }
+
+      const quoter = await Quoter.findById(quoterId);
+      if (!quoter) {
+        return new Response(JSON.stringify({ success: false }), { status: 404 });
+      }
+
+      quoter.customProducts[productIndex].isFinished = !quoter.customProducts[productIndex].isFinished;
+
+      // Check if all products AND custom products are finished
+      const allFinished =
+        quoter.products.every((p: any) => p.isFinished) &&
+        quoter.customProducts.every((p: any) => p.isFinished);
       if (allFinished && quoter.status === "EN PROCESO") {
         quoter.status = "COMPLETA";
         quoter.statusChanges.push({ status: "COMPLETA", date: new Date() });
@@ -402,6 +430,7 @@ export async function PATCH(request: Request) {
           description: z.string(),
           price: z.number().min(0),
           amount: z.number().min(0),
+          isFinished: z.boolean().optional(),
         })).default([]),
       });
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { Quoter, ProductsQuoter, SHIPPING_LABELS, SHIPPING_OPTIONS, ShippingType } from "@/entities/Quoter";
+import { Quoter, ProductsQuoter, CustomProduct, SHIPPING_LABELS, SHIPPING_OPTIONS, ShippingType } from "@/entities/Quoter";
 import { ProductDoc } from "@/entities/Product";
 import { QuoterRepository } from "@/data/quoter.repository";
 import { SettingsRepository } from "@/data/settings.repository";
@@ -42,6 +42,7 @@ type OrderCardState = {
   invoiceInput: string;
   dateValue: string;
   products: ProductsQuoter[];
+  customProducts: CustomProduct[];
   shippingType: string | null;
   configuredShipping: number;
 };
@@ -54,6 +55,8 @@ type OrderCardAction =
   | { type: "SET_DATE_VALUE"; payload: string }
   | { type: "SET_PRODUCTS"; payload: ProductsQuoter[] }
   | { type: "TOGGLE_PRODUCT"; index: number }
+  | { type: "SET_CUSTOM_PRODUCTS"; payload: CustomProduct[] }
+  | { type: "TOGGLE_CUSTOM_PRODUCT"; index: number }
   | { type: "SET_SHIPPING_TYPE"; payload: string | null }
   | { type: "SET_CONFIGURED_SHIPPING"; payload: number };
 
@@ -76,6 +79,13 @@ function orderCardReducer(state: OrderCardState, action: OrderCardAction): Order
       updated[action.index] = { ...updated[action.index], isFinished: !updated[action.index].isFinished };
       return { ...state, products: updated };
     }
+    case "SET_CUSTOM_PRODUCTS":
+      return { ...state, customProducts: action.payload };
+    case "TOGGLE_CUSTOM_PRODUCT": {
+      const updated = [...state.customProducts];
+      updated[action.index] = { ...updated[action.index], isFinished: !updated[action.index].isFinished };
+      return { ...state, customProducts: updated };
+    }
     case "SET_SHIPPING_TYPE":
       return { ...state, shippingType: action.payload };
     case "SET_CONFIGURED_SHIPPING":
@@ -95,10 +105,11 @@ export default function OrderCard({ quoter }: OrderCardProps) {
       ? new Date(quoter.dateLimit).toISOString().split("T")[0]
       : "",
     products: quoter.products || [],
+    customProducts: quoter.customProducts || [],
     shippingType: (quoter.shippingType ?? ((quoter.shippingCost ?? 0) > 0 ? 'PAKET' : null)) as string | null,
     configuredShipping: quoter.shippingCost ?? 0,
   });
-  const { showModal, loading, invoiceInput, dateValue, products, shippingType, configuredShipping } = state;
+  const { showModal, loading, invoiceInput, dateValue, products, customProducts, shippingType, configuredShipping } = state;
   const { showToast } = useContext(ToastContext);
   const router = useRouter();
 
@@ -119,8 +130,10 @@ export default function OrderCard({ quoter }: OrderCardProps) {
       .catch(() => {});
   }, []);
 
-  const finishedCount = products.filter((p) => p.isFinished).length;
-  const totalCount = products.length;
+  const finishedCount =
+    products.filter((p) => p.isFinished).length +
+    customProducts.filter((p) => p.isFinished).length;
+  const totalCount = products.length + customProducts.length;
   const progressPercent =
     totalCount > 0 ? Math.round((finishedCount / totalCount) * 100) : 0;
 
@@ -138,6 +151,28 @@ export default function OrderCard({ quoter }: OrderCardProps) {
       const res = await repo.toggleProductFinished(quoter._id!, index);
       if (res.success) {
         dispatch({ type: "TOGGLE_PRODUCT", index });
+        if (res.allFinished) {
+          showToast(true, "¡Orden completada!", "Todos los productos están listos");
+          dispatch({ type: "CLOSE_MODAL" });
+          router.refresh();
+        }
+      } else {
+        showToast(false, "Error al actualizar producto");
+      }
+    } catch {
+      showToast(false, "Error al actualizar producto");
+    } finally {
+      dispatch({ type: "SET_LOADING", payload: false });
+    }
+  };
+
+  const handleToggleCustomProduct = async (index: number) => {
+    dispatch({ type: "SET_LOADING", payload: true });
+    try {
+      const repo = QuoterRepository.instance();
+      const res = await repo.toggleCustomProductFinished(quoter._id!, index);
+      if (res.success) {
+        dispatch({ type: "TOGGLE_CUSTOM_PRODUCT", index });
         if (res.allFinished) {
           showToast(true, "¡Orden completada!", "Todos los productos están listos");
           dispatch({ type: "CLOSE_MODAL" });
@@ -400,24 +435,43 @@ export default function OrderCard({ quoter }: OrderCardProps) {
               ))}
             </div>
 
-            {/* Custom Products (read-only) */}
-            {quoter.customProducts && quoter.customProducts.length > 0 && (
+            {/* Custom Products checklist */}
+            {customProducts.length > 0 && (
               <div className="space-y-3 mt-4">
                 <h4 className="text-sm font-semibold text-purple-600 dark:text-purple-400">
                   Productos Personalizados
                 </h4>
-                {quoter.customProducts.map((cp, idx) => (
+                {customProducts.map((cp, idx) => (
                   <div
                     key={idx}
-                    className="flex items-center justify-between p-3 rounded-lg bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-700/50"
+                    className={`flex items-center justify-between p-3 rounded-lg border transition-all ${
+                      cp.isFinished
+                        ? "bg-success/5 border-success/30"
+                        : "bg-purple-50 dark:bg-purple-900/20 border-purple-200 dark:border-purple-700/50"
+                    }`}
                   >
-                    <div>
-                      <p className="text-sm font-medium text-gray-900 dark:text-white">
-                        {cp.description}
-                      </p>
-                      <p className="text-xs text-gray-500">Cant: {cp.amount}</p>
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      <Checkbox
+                        isSelected={!!cp.isFinished}
+                        onValueChange={() => handleToggleCustomProduct(idx)}
+                        isDisabled={loading}
+                        color="success"
+                        size="lg"
+                      />
+                      <div className="min-w-0">
+                        <p
+                          className={`text-sm font-medium truncate ${
+                            cp.isFinished
+                              ? "line-through text-gray-400"
+                              : "text-gray-900 dark:text-white"
+                          }`}
+                        >
+                          {cp.description}
+                        </p>
+                        <p className="text-xs text-gray-500">Cant: {cp.amount}</p>
+                      </div>
                     </div>
-                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300 shrink-0 ml-2">
                       {formatCurrency(cp.price * cp.amount)}
                     </p>
                   </div>

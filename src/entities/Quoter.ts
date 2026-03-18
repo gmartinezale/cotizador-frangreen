@@ -32,6 +32,7 @@ export type CustomProduct = {
   description: string;
   price: number;
   amount: number;
+  isFinished?: boolean;
 };
 
 export type ProductPrice = {
