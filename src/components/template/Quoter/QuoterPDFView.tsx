@@ -4,11 +4,12 @@ import Image from "next/image";
 import formatCurrency from "@/utils/formatCurrency";
 
 interface QuoterProduct {
-  product: { _id: string; name: string } | null;
+  product: { _id: string; name: string; types?: { description: string; multiplier?: number }[] } | null;
   productType: { description: string; price: number };
   productFinish?: { description: string; price: number };
   amount: number;
   price: number;
+  multiplier?: number;
   isFinished: boolean;
   extras: { description: string; price: number; amount: number }[];
 }
@@ -47,7 +48,18 @@ export default function QuoterPDFView({ quoter }: QuoterPDFViewProps) {
   });
 
   // Build line items for the table
-  const lineItems: { description: string; quantity: number; unitPrice: number; total: number }[] = [];
+  const lineItems: { description: string; quantity: number; unitPrice: number; total: number; multiplier: number }[] = [];
+
+  // Retroactive multiplier: prefers stored field, fallback to product catalog lookup by type description
+  function resolveMultiplier(p: QuoterProduct): number {
+    if (p.multiplier && p.multiplier > 1) return p.multiplier;
+    const types = p.product?.types;
+    if (types) {
+      const matched = types.find((t) => t.description === p.productType?.description);
+      if (matched?.multiplier && matched.multiplier > 1) return matched.multiplier;
+    }
+    return 1;
+  }
 
   quoter.products.forEach((p) => {
     const productName = p.product?.name || "Producto";
@@ -60,6 +72,7 @@ export default function QuoterPDFView({ quoter }: QuoterPDFViewProps) {
       quantity: p.amount,
       unitPrice: p.price,
       total: p.price * p.amount,
+      multiplier: resolveMultiplier(p),
     });
 
     // Extras for this product
@@ -70,6 +83,7 @@ export default function QuoterPDFView({ quoter }: QuoterPDFViewProps) {
           quantity: extra.amount,
           unitPrice: extra.price,
           total: extra.price * extra.amount,
+          multiplier: 1,
         });
       });
     }
@@ -83,6 +97,7 @@ export default function QuoterPDFView({ quoter }: QuoterPDFViewProps) {
         quantity: cp.amount,
         unitPrice: cp.price,
         total: cp.price * cp.amount,
+        multiplier: 1,
       });
     });
   }
@@ -205,7 +220,12 @@ export default function QuoterPDFView({ quoter }: QuoterPDFViewProps) {
                           {item.description}
                         </td>
                         <td className="py-3 px-4 text-sm text-center text-gray-600">
-                          {item.quantity}
+                          <span>{item.quantity}</span>
+                          {item.multiplier > 1 && (
+                            <span className="block text-xs text-purple-500">
+                              ({item.quantity * item.multiplier} uds.)
+                            </span>
+                          )}
                         </td>
                         <td className="py-3 px-4 text-sm text-center text-gray-600">
                           {formatCurrency(item.unitPrice)}

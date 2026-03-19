@@ -379,7 +379,7 @@ export default function CreateQuoter({
                 {ui.savedQuoterNumber && (
                   <Button
                     as="a"
-                    href={`/view/cotizacion-${ui.savedQuoterNumber}`}
+                    href={`/api/quoter/${ui.savedQuoterNumber}/pdf`}
                     target="_blank"
                     color="primary"
                     size="lg"

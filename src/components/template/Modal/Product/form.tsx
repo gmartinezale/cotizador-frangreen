@@ -22,6 +22,7 @@ interface ProductType {
   _id?: string;
   description: string;
   price?: number;
+  multiplier?: number;
   finishes?: ProductPrice[];
   extras?: ProductPrice[];
 }
@@ -100,6 +101,27 @@ function TypeFieldsSection({
             isRequired
             isInvalid={!!fieldState.error}
             errorMessage={fieldState.error?.message}
+          />
+        )}
+      />
+
+      <Controller
+        name={`types.${typeIndex}.multiplier`}
+        control={control}
+        render={({ field, fieldState }) => (
+          <Input
+            {...field}
+            value={field.value?.toString() || "1"}
+            onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : 1)}
+            label="Multiplicador de unidades"
+            type="number"
+            placeholder="1"
+            variant="bordered"
+            isInvalid={!!fieldState.error}
+            errorMessage={fieldState.error?.message}
+            description="Unidades que salen por 1 unidad cotizada. Ej: A5=2, A6=4 (de 1 pliego A4)"
+            startContent={<span className="text-default-400 text-small">×</span>}
+            min="1"
           />
         )}
       />

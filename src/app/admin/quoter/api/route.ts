@@ -154,6 +154,7 @@ export async function POST(request: Request) {
           }).optional(),
           amount: z.number(),
           price: z.number(),
+          multiplier: z.number().min(1).default(1),
           isFinished: z.boolean(),
           extras: z.array(
             z.object({
@@ -423,6 +424,7 @@ export async function PATCH(request: Request) {
           productFinish: z.object({ description: z.string(), price: z.number() }).optional(),
           amount: z.number().min(0),
           price: z.number().min(0),
+          multiplier: z.number().min(1).default(1),
           isFinished: z.boolean(),
           extras: z.array(z.object({ amount: z.number(), description: z.string(), price: z.number() })),
         })),

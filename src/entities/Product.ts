@@ -11,6 +11,7 @@ export type ProductType = {
   _id?: string;
   description: string;
   price?: number; // Optional: required only if no finishes
+  multiplier?: number; // Units produced per 1 input unit (e.g., A5=2, A6=4 from 1 A4 sheet)
   finishes?: ProductPrice[]; // Acabados/sub-tipos
   extras?: ProductPrice[]; // Extras opcionales para este tipo
 };

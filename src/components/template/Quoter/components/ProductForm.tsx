@@ -75,6 +75,7 @@ export function ProductForm({
       price: type.price || 0,
     };
     updatedProducts[index].productFinish = undefined;
+    updatedProducts[index].multiplier = type.multiplier && type.multiplier > 1 ? type.multiplier : 1;
     
     // Si el tipo tiene precio directo y no tiene acabados, usar ese precio
     if (type.price !== undefined && (!type.finishes || type.finishes.length === 0)) {
@@ -129,9 +130,11 @@ export function ProductForm({
 
   const hasFinishes = selectedType && selectedType.finishes && selectedType.finishes.length > 0;
   const currentProduct = productQuoters[index];
+  const multiplier = currentProduct?.multiplier && currentProduct.multiplier > 1 ? currentProduct.multiplier : 1;
   const subtotal = currentProduct?.price && currentProduct?.amount 
     ? currentProduct.price * currentProduct.amount 
     : 0;
+  const totalUnits = currentProduct?.amount ? currentProduct.amount * multiplier : 0;
 
   return (
     <Card className="mt-3 sm:mt-4 bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
@@ -140,6 +143,11 @@ export function ProductForm({
           <Chip size="sm" color="primary" variant="flat">
             Producto #{index + 1}
           </Chip>
+          {multiplier > 1 && currentProduct?.amount > 0 && (
+            <Chip size="sm" color="secondary" variant="flat">
+              {totalUnits} unidades finales
+            </Chip>
+          )}
           {subtotal > 0 && (
             <Chip size="sm" color="success" variant="flat">
               Subtotal: {formatCurrency(subtotal)}

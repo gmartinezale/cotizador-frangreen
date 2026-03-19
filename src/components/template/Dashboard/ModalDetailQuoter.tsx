@@ -8,6 +8,17 @@ interface ModalDetailQuoterProps {
   quoter: Quoter;
 }
 
+function resolveMultiplier(product: Quoter["products"][number]): number {
+  if (product.multiplier && product.multiplier > 1) return product.multiplier;
+  const doc = product.product;
+  if (typeof doc === "object" && doc !== null) {
+    const types = (doc as any).types as Array<{ description: string; multiplier?: number }> | undefined;
+    const matched = types?.find((t) => t.description === product.productType?.description);
+    if (matched?.multiplier && matched.multiplier > 1) return matched.multiplier;
+  }
+  return 1;
+}
+
 export default function ModalDetailQuoter({ quoter }: ModalDetailQuoterProps) {
   const getProductName = (product: string | ProductDoc): string => {
     if (typeof product === "object" && product !== null) {
@@ -50,6 +61,11 @@ export default function ModalDetailQuoter({ quoter }: ModalDetailQuoterProps) {
                 <div className="text-right">
                   <p className="text-gray-500 dark:text-gray-400 text-sm">Cantidad</p>
                   <p className="text-gray-900 dark:text-white font-semibold">{product.amount}</p>
+                  {resolveMultiplier(product) > 1 && (
+                    <p className="text-purple-600 dark:text-purple-400 text-xs font-medium">
+                      {product.amount * resolveMultiplier(product)} uds.
+                    </p>
+                  )}
                 </div>
               </div>
 

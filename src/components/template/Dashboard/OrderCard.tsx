@@ -144,6 +144,17 @@ export default function OrderCard({ quoter }: OrderCardProps) {
     return String(product);
   };
 
+  // Retroactive multiplier: prefers stored value; falls back to matching type by description in product catalog
+  const getProductMultiplier = (item: typeof products[number]): number => {
+    if (item.multiplier && item.multiplier > 1) return item.multiplier;
+    const productObj = item.product as any;
+    if (productObj?.types) {
+      const matched = productObj.types.find((t: any) => t.description === item.productType?.description);
+      if (matched?.multiplier && matched.multiplier > 1) return matched.multiplier;
+    }
+    return 1;
+  };
+
   const handleToggleProduct = async (index: number) => {
     dispatch({ type: "SET_LOADING", payload: true });
     try {
@@ -425,6 +436,11 @@ export default function OrderCard({ quoter }: OrderCardProps) {
                       </p>
                       <p className="text-sm text-gray-400">
                         {product.productType?.description} {product.productFinish?.description} — Cant: {product.amount}
+                        {getProductMultiplier(product) > 1 && (
+                          <span className="ml-1 text-purple-500 dark:text-purple-400">
+                            ({product.amount * getProductMultiplier(product)} uds.)
+                          </span>
+                        )}
                       </p>
                     </div>
                   </div>

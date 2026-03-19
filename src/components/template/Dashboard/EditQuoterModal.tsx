@@ -48,6 +48,17 @@ function getProductName(product: string | ProductDoc): string {
   return typeof product === "object" && product !== null ? product.name ?? "" : String(product);
 }
 
+function resolveMultiplier(product: ProductsQuoter): number {
+  if (product.multiplier && product.multiplier > 1) return product.multiplier;
+  const doc = product.product;
+  if (typeof doc === "object" && doc !== null) {
+    const types = (doc as any).types as Array<{ description: string; multiplier?: number }> | undefined;
+    const matched = types?.find((t) => t.description === product.productType?.description);
+    if (matched?.multiplier && matched.multiplier > 1) return matched.multiplier;
+  }
+  return 1;
+}
+
 // ── Existing product row (simplified — amount-only editable) ──────────────────
 
 interface ExistingProductRowProps {
@@ -63,6 +74,8 @@ function ExistingProductRow({ product, index, onAmountChange, onRemove }: Existi
   const typeLabel = [product.productType?.description, product.productFinish?.description]
     .filter(Boolean)
     .join(" / ");
+  const multiplier = resolveMultiplier(product);
+  const totalUnits = product.amount * multiplier;
 
   return (
     <Card className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
@@ -74,6 +87,11 @@ function ExistingProductRow({ product, index, onAmountChange, onRemove }: Existi
               <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
                 {getProductName(product.product)}
               </p>
+              {multiplier > 1 && product.amount > 0 && (
+                <Chip size="sm" color="secondary" variant="flat">
+                  {totalUnits} uds.
+                </Chip>
+              )}
             </div>
             {typeLabel && (
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{typeLabel}</p>

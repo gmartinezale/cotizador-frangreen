@@ -25,6 +25,7 @@ interface IProductsQuoter {
   productFinish?: IProductPrice; // Optional: selected finish from productType.finishes
   amount: number;
   price: number; // Calculated price (type.price or finish.price + selected extras)
+  multiplier: number; // Units produced per input unit (e.g., A5=2, A6=4); default 1
   isFinished: boolean;
   extras: IExtraProductQuoter[]; // Selected extras (from productType.extras + product.extras)
 }
@@ -63,6 +64,7 @@ const QuoterSchema = new Schema<IQuoter>(
         productFinish: { type: ProductPriceSchema }, // Optional: selected finish from type.finishes
         amount: { type: Number, required: true, min: 1 },
         price: { type: Number, required: true, min: 0 },
+        multiplier: { type: Number, default: 1, min: 1 }, // Units per input (e.g., A5=2, A6=4)
         isFinished: { type: Boolean, default: false },
         extras: [
           {

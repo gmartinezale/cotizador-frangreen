@@ -156,44 +156,63 @@ export async function generateQuoterPdf(quoter: any): Promise<Uint8Array> {
   y -= HEADER_H;
 
   // Line items
-  interface LineItem { description: string; quantity: number; unitPrice: number; total: number; isExtra: boolean; }
+  interface LineItem { description: string; quantity: number; unitPrice: number; total: number; isExtra: boolean; multiplier: number; }
   const lineItems: LineItem[] = [];
+
+  // Retroactive multiplier helper
+  function resolveMultiplier(p: any): number {
+    if (p.multiplier && p.multiplier > 1) return p.multiplier;
+    if (p.product?.types) {
+      const matched = p.product.types.find((t: any) => t.description === p.productType?.description);
+      if (matched?.multiplier && matched.multiplier > 1) return matched.multiplier;
+    }
+    return 1;
+  }
 
   (quoter.products || []).forEach((p: any) => {
     const name = p.product?.name || "Producto";
     const type = p.productType?.description || "";
     const finish = p.productFinish?.description ? ` - ${p.productFinish.description}` : "";
-    lineItems.push({ description: `${name} ${type}${finish}`, quantity: p.amount, unitPrice: p.price, total: p.price * p.amount, isExtra: false });
+    lineItems.push({ description: `${name} ${type}${finish}`, quantity: p.amount, unitPrice: p.price, total: p.price * p.amount, isExtra: false, multiplier: resolveMultiplier(p) });
     (p.extras || []).forEach((e: any) => {
-      lineItems.push({ description: `Extra: ${e.description}`, quantity: e.amount, unitPrice: e.price, total: e.price * e.amount, isExtra: true });
+      lineItems.push({ description: `Extra: ${e.description}`, quantity: e.amount, unitPrice: e.price, total: e.price * e.amount, isExtra: true, multiplier: 1 });
     });
   });
   (quoter.customProducts || []).forEach((cp: any) => {
-    lineItems.push({ description: cp.description, quantity: cp.amount, unitPrice: cp.price, total: cp.price * cp.amount, isExtra: false });
+    lineItems.push({ description: cp.description, quantity: cp.amount, unitPrice: cp.price, total: cp.price * cp.amount, isExtra: false, multiplier: 1 });
   });
 
   lineItems.forEach((item, idx) => {
-    ensureSpace(ROW_H + 5);
+    const rowH = ROW_H;
+    ensureSpace(rowH + 5);
     const rowBg = idx % 2 === 0 ? WHITE : LIGHT_GRAY;
-    page.drawRectangle({ x: MARGIN, y: y - ROW_H, width: CONTENT_W, height: ROW_H, color: rowBg });
-    page.drawLine({ start: { x: MARGIN, y: y - ROW_H }, end: { x: MARGIN + CONTENT_W, y: y - ROW_H }, thickness: 0.3, color: SEP });
+    page.drawRectangle({ x: MARGIN, y: y - rowH, width: CONTENT_W, height: rowH, color: rowBg });
+    page.drawLine({ start: { x: MARGIN, y: y - rowH }, end: { x: MARGIN + CONTENT_W, y: y - rowH }, thickness: 0.3, color: SEP });
 
     const sz = 9;
-    const ry = y - ROW_H + (ROW_H - sz) / 2;
+    const mainLineY = y - rowH + (rowH - sz) / 2;
     const tcolor = item.isExtra ? GRAY : DARK;
     const prefix = item.isExtra ? "  " : "";
-    page.drawText(prefix + trunc(item.description, item.isExtra ? 58 : 63), { x: COL_X[0] + 8, y: ry, font, size: sz, color: tcolor });
+    const descText = prefix + trunc(item.description, item.isExtra ? 58 : 63);
+    page.drawText(descText, { x: COL_X[0] + 8, y: mainLineY, font, size: sz, color: tcolor });
+    if (item.multiplier > 1) {
+      const finalUnits = item.quantity * item.multiplier;
+      const descW = font.widthOfTextAtSize(descText, sz);
+      const unitsText = ` (${finalUnits} uds.)`;
+      page.drawText(unitsText, { x: COL_X[0] + 8 + descW, y: mainLineY, font, size: 7, color: GRAY });
+    }
 
+    // Cantidad
     const qStr = String(item.quantity);
-    page.drawText(qStr, { x: COL_X[1] + (COL_W[1] - font.widthOfTextAtSize(qStr, sz)) / 2, y: ry, font, size: sz, color: DARK });
+    page.drawText(qStr, { x: COL_X[1] + (COL_W[1] - font.widthOfTextAtSize(qStr, sz)) / 2, y: mainLineY, font, size: sz, color: DARK });
 
     const uStr = clp(item.unitPrice);
-    page.drawText(uStr, { x: COL_X[2] + COL_W[2] - font.widthOfTextAtSize(uStr, sz) - 8, y: ry, font, size: sz, color: DARK });
+    page.drawText(uStr, { x: COL_X[2] + COL_W[2] - font.widthOfTextAtSize(uStr, sz) - 8, y: mainLineY, font, size: sz, color: DARK });
 
     const tStr = clp(item.total);
-    page.drawText(tStr, { x: COL_X[3] + COL_W[3] - font.widthOfTextAtSize(tStr, sz) - 8, y: ry, font, size: sz, color: DARK });
+    page.drawText(tStr, { x: COL_X[3] + COL_W[3] - font.widthOfTextAtSize(tStr, sz) - 8, y: mainLineY, font, size: sz, color: DARK });
 
-    y -= ROW_H;
+    y -= rowH;
   });
 
   y -= 24;

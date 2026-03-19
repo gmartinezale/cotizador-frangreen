@@ -21,7 +21,7 @@ export default async function ViewQuoterPage({ params }: ViewQuoterPageProps) {
   await connectDB();
 
   const quoter = await Quoter.findOne({ quoterNumber })
-    .populate("products.product", "name")
+    .populate("products.product", "name types")
     .lean();
 
   if (!quoter) {

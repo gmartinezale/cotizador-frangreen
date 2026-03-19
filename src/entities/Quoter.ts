@@ -48,6 +48,7 @@ export type ProductsQuoter = {
   productFinish?: ProductPrice; // Optional: selected finish from productType.finishes
   amount: number;
   price: number; // Calculated price (type.price or finish.price + selected extras)
+  multiplier?: number; // Units per input unit, default 1 (e.g., A5 sheet = 2 units)
   isFinished: boolean;
   extras: ExtraProductQuoter[]; // Selected extras (from type.extras + product.extras)
 };

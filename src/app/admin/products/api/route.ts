@@ -18,6 +18,7 @@ const ProductPriceSchema = z.object({
 const ProductTypeSchema = z.object({
   _id: z.string().optional(),
   description: z.string().min(1, "La descripción del tipo es requerida"),
+  multiplier: z.number().min(1, "El multiplicador debe ser mayor o igual a 1").optional(),
   price: z.number().optional(),
   finishes: z.array(ProductPriceSchema).default([]).optional(),
   extras: z.array(ProductPriceSchema).default([]).optional(),

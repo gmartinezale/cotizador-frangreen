@@ -28,7 +28,7 @@ export async function GET(
   await connectDB();
 
   const quoter = await Quoter.findOne({ quoterNumber })
-    .populate("products.product", "name")
+    .populate("products.product", "name types")
     .lean();
 
   if (!quoter) {
