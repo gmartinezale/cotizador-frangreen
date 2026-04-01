@@ -442,6 +442,24 @@ export default function OrderCard({ quoter }: OrderCardProps) {
                           </span>
                         )}
                       </p>
+                      {product.extras && product.extras.length > 0 && (
+                        <div className="mt-2 pt-2 border-t border-dashed border-gray-300 dark:border-gray-600 space-y-1">
+                          <p className="text-xs font-semibold text-orange-500 dark:text-orange-400 uppercase tracking-wide">
+                            Extras
+                          </p>
+                          {product.extras.map((extra, extraIdx) => (
+                            <div key={extraIdx} className="flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-orange-400 dark:bg-orange-500 shrink-0" />
+                              <p className="text-xs text-gray-700 dark:text-gray-300">
+                                {extra.description}
+                                <span className="ml-1 font-semibold text-orange-500 dark:text-orange-400">
+                                  x{extra.amount}
+                                </span>
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                   <p className="text-sm font-medium text-gray-700 dark:text-gray-300 shrink-0 ml-2">
