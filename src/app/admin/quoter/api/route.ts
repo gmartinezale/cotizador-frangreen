@@ -4,12 +4,27 @@ import Sequence from "@/models/sequence";
 import { PipelineStage } from "mongoose";
 import { z } from "zod";
 import { getSession } from "@/lib/dal";
-import { 
-  unauthorizedResponse, 
+import {
+  unauthorizedResponse,
   validateOrigin,
   safeErrorLog,
-  safeLog 
+  safeLog,
+  isValidObjectId,
+  invalidIdResponse,
 } from "@/lib/security";
+
+const VALID_ACTIONS = [
+  "MARK_PAID",
+  "START_ORDER",
+  "UPDATE_DATE_LIMIT",
+  "DELETE",
+  "TOGGLE_PRODUCT",
+  "TOGGLE_CUSTOM_PRODUCT",
+  "SET_INVOICE",
+  "UPDATE_SHIPPING",
+  "EDIT_QUOTER",
+] as const;
+type QuoterAction = (typeof VALID_ACTIONS)[number];
 
 function basePopulateQuoter(pipeline: PipelineStage[]) {
   // Lookup para productos
@@ -246,6 +261,14 @@ export async function PATCH(request: Request) {
       return new Response(JSON.stringify({ success: false, message: "Parámetros requeridos" }), { status: 400 });
     }
 
+    // Validate action is one of the allowed values
+    if (!VALID_ACTIONS.includes(action as QuoterAction)) {
+      return new Response(JSON.stringify({ success: false, message: "Acción no válida" }), { status: 400 });
+    }
+
+    // Validate quoterId is a valid MongoDB ObjectId
+    if (!isValidObjectId(quoterId)) return invalidIdResponse();
+
     // Mark as paid: PENDIENTE → PAGADO + assign orderNumber
     if (action === "MARK_PAID") {
       const { sequence } = await Sequence.findOneAndUpdate(
@@ -253,7 +276,7 @@ export async function PATCH(request: Request) {
         { $inc: { "sequence.order": 1 } },
         { new: true, upsert: true }
       );
-      console.log("New order sequence:", sequence);
+      safeLog("New order sequence", sequence);
       const orderNumber = sequence.order;
 
       const quoter = await Quoter.findByIdAndUpdate(
@@ -288,9 +311,14 @@ export async function PATCH(request: Request) {
     // Update date limit (allowed while PAGADO)
     if (action === "UPDATE_DATE_LIMIT") {
       const { dateLimit } = body;
+      const dateLimitSchema = z.string().datetime({ offset: true }).nullable().optional();
+      const parsed = dateLimitSchema.safeParse(dateLimit ?? null);
+      if (!parsed.success) {
+        return new Response(JSON.stringify({ success: false, message: "dateLimit inválida" }), { status: 400 });
+      }
       const quoter = await Quoter.findByIdAndUpdate(
         quoterId,
-        { dateLimit: dateLimit ? new Date(dateLimit) : null },
+        { dateLimit: parsed.data ? new Date(parsed.data) : null },
         { new: true }
       );
       if (!quoter) return new Response(JSON.stringify({ success: false }), { status: 404 });
@@ -316,13 +344,17 @@ export async function PATCH(request: Request) {
 
     // Toggle product isFinished
     if (action === "TOGGLE_PRODUCT") {
-      if (productIndex === undefined) {
+      if (typeof productIndex !== "number" || productIndex < 0) {
         return new Response(JSON.stringify({ success: false, message: "productIndex requerido" }), { status: 400 });
       }
 
       const quoter = await Quoter.findById(quoterId);
       if (!quoter) {
         return new Response(JSON.stringify({ success: false }), { status: 404 });
+      }
+
+      if (productIndex >= quoter.products.length) {
+        return new Response(JSON.stringify({ success: false, message: "productIndex fuera de rango" }), { status: 400 });
       }
 
       quoter.products[productIndex].isFinished = !quoter.products[productIndex].isFinished;
@@ -342,13 +374,17 @@ export async function PATCH(request: Request) {
 
     // Toggle custom product isFinished
     if (action === "TOGGLE_CUSTOM_PRODUCT") {
-      if (productIndex === undefined) {
+      if (typeof productIndex !== "number" || productIndex < 0) {
         return new Response(JSON.stringify({ success: false, message: "productIndex requerido" }), { status: 400 });
       }
 
       const quoter = await Quoter.findById(quoterId);
       if (!quoter) {
         return new Response(JSON.stringify({ success: false }), { status: 404 });
+      }
+
+      if (productIndex >= quoter.customProducts.length) {
+        return new Response(JSON.stringify({ success: false, message: "productIndex fuera de rango" }), { status: 400 });
       }
 
       quoter.customProducts[productIndex].isFinished = !quoter.customProducts[productIndex].isFinished;
@@ -368,13 +404,15 @@ export async function PATCH(request: Request) {
 
     // Assign invoice/receipt number
     if (action === "SET_INVOICE") {
-      if (!invoiceNumber) {
-        return new Response(JSON.stringify({ success: false, message: "invoiceNumber requerido" }), { status: 400 });
+      const invoiceSchema = z.string().min(1).max(50).regex(/^[a-zA-Z0-9\-]+$/);
+      const parsedInvoice = invoiceSchema.safeParse(invoiceNumber);
+      if (!parsedInvoice.success) {
+        return new Response(JSON.stringify({ success: false, message: "invoiceNumber inválido" }), { status: 400 });
       }
 
       const quoter = await Quoter.findByIdAndUpdate(
         quoterId,
-        { invoiceNumber },
+        { invoiceNumber: parsedInvoice.data },
         { new: true }
       );
       if (!quoter) {

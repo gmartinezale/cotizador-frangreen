@@ -1,6 +1,8 @@
 import "server-only";
 import { headers } from "next/headers";
 import mongoose from "mongoose";
+import { connectDB } from "@/lib/mongo";
+import RateLimit from "@/models/rateLimit";
 
 /**
  * Validates that a string is a valid MongoDB ObjectId
@@ -45,29 +47,36 @@ export function rateLimitResponse() {
  * Should be used in API routes that modify data
  */
 export async function validateOrigin(request: Request): Promise<boolean> {
-  const headersList = await headers();
-  const origin = headersList.get("origin");
-  const host = headersList.get("host");
-  
-  // Allow requests without origin (same-origin requests)
+  const origin = request.headers.get("origin");
+
+  // Allow requests without origin (same-origin server requests)
   if (!origin) return true;
-  
+
   // In development, allow localhost
   if (process.env.NODE_ENV === "development") {
     if (origin.includes("localhost") || origin.includes("127.0.0.1")) {
       return true;
     }
   }
-  
-  // Check if origin matches host
+
+  // Check if origin matches the request host.
+  // We derive the host from request.url instead of the Host header because
+  // "Host" is a forbidden request header in the Fetch API and cannot be set
+  // programmatically (e.g. in tests or certain proxy setups).
   try {
     const originUrl = new URL(origin);
-    const allowedHosts = [
-      host,
-      process.env.NEXT_PUBLIC_BASE_URL ? new URL(process.env.NEXT_PUBLIC_BASE_URL).host : null,
-      process.env.VERCEL_URL,
-    ].filter(Boolean);
-    
+    const requestHost = new URL(request.url).host;
+    // Guard BASE_URL / APP_URL parsing — Vite overrides BASE_URL to "/" which
+    // would throw. Use APP_URL (project-specific) or fall back to BASE_URL.
+    const appUrlRaw = process.env.APP_URL ?? process.env.BASE_URL;
+    let appUrlHost: string | null = null;
+    try {
+      appUrlHost = appUrlRaw ? new URL(appUrlRaw).host : null;
+    } catch {
+      appUrlHost = null;
+    }
+    const allowedHosts = [requestHost, appUrlHost, process.env.VERCEL_URL].filter(Boolean);
+
     return allowedHosts.some(h => h && originUrl.host === h);
   } catch {
     return false;
@@ -75,8 +84,8 @@ export async function validateOrigin(request: Request): Promise<boolean> {
 }
 
 /**
- * Simple in-memory rate limiter for development
- * For production on Vercel, use @upstash/ratelimit with Redis
+ * Simple in-memory rate limiter used as fallback in development.
+ * WARNING: NOT effective in serverless production (state resets per invocation).
  */
 const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
 
@@ -85,48 +94,73 @@ export interface RateLimitConfig {
   maxRequests: number; // Maximum requests per window
 }
 
+/**
+ * MongoDB-backed rate limiter. Works across all serverless instances.
+ * Falls back to in-memory map if DB is unavailable.
+ * Uses atomic $inc to prevent race conditions.
+ */
 export async function checkRateLimit(
   identifier: string,
   config: RateLimitConfig = { windowMs: 60000, maxRequests: 10 }
 ): Promise<{ success: boolean; remaining: number }> {
-  const now = Date.now();
-  const record = rateLimitMap.get(identifier);
-  
-  // Clean up old entries periodically
-  if (rateLimitMap.size > 10000) {
-    const keysToDelete: string[] = [];
-    rateLimitMap.forEach((value, key) => {
-      if (value.resetTime < now) {
-        keysToDelete.push(key);
-      }
-    });
-    keysToDelete.forEach(key => rateLimitMap.delete(key));
+  try {
+    await connectDB();
+    const now = new Date();
+    const resetAt = new Date(now.getTime() + config.windowMs);
+
+    // Atomic upsert: create a new window if the key doesn't exist, or increment if it does.
+    // The TTL index on resetAt handles automatic expiry.
+    const record = await RateLimit.findOneAndUpdate(
+      { key: identifier, resetAt: { $gt: now } },
+      { $inc: { count: 1 }, $setOnInsert: { resetAt } },
+      { upsert: true, new: true }
+    );
+
+    const remaining = Math.max(0, config.maxRequests - record.count);
+    const success = record.count <= config.maxRequests;
+    return { success, remaining };
+  } catch {
+    // In-memory fallback (development / DB unreachable)
+    const now = Date.now();
+    const record = rateLimitMap.get(identifier);
+
+    // Clean up old entries periodically
+    if (rateLimitMap.size > 10000) {
+      const keysToDelete: string[] = [];
+      rateLimitMap.forEach((value, key) => {
+        if (value.resetTime < now) {
+          keysToDelete.push(key);
+        }
+      });
+      keysToDelete.forEach((key) => rateLimitMap.delete(key));
+    }
+
+    if (!record || record.resetTime < now) {
+      rateLimitMap.set(identifier, {
+        count: 1,
+        resetTime: now + config.windowMs,
+      });
+      return { success: true, remaining: config.maxRequests - 1 };
+    }
+
+    if (record.count >= config.maxRequests) {
+      return { success: false, remaining: 0 };
+    }
+
+    record.count++;
+    return { success: true, remaining: config.maxRequests - record.count };
   }
-  
-  if (!record || record.resetTime < now) {
-    rateLimitMap.set(identifier, {
-      count: 1,
-      resetTime: now + config.windowMs,
-    });
-    return { success: true, remaining: config.maxRequests - 1 };
-  }
-  
-  if (record.count >= config.maxRequests) {
-    return { success: false, remaining: 0 };
-  }
-  
-  record.count++;
-  return { success: true, remaining: config.maxRequests - record.count };
 }
 
 /**
- * Get client IP for rate limiting
+ * Get client IP for rate limiting.
+ * Uses x-real-ip (set by Vercel, not spoofable by clients) as primary source.
  */
 export async function getClientIP(): Promise<string> {
   const headersList = await headers();
   return (
-    headersList.get("x-forwarded-for")?.split(",")[0]?.trim() ||
     headersList.get("x-real-ip") ||
+    headersList.get("x-forwarded-for")?.split(",")[0]?.trim() ||
     "unknown"
   );
 }
